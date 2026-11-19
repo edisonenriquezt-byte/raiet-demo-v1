@@ -261,6 +261,11 @@
     `;
 
     document.body.appendChild(acceso);
+    // La activación por correo pertenece a la web HTTPS, no a la WebView Android.
+    if (puente()) {
+      const enlaceActivacion = acceso.querySelector("#raiet-activar-web");
+      if (enlaceActivacion) enlaceActivacion.hidden = true;
+    }
 
     const salir = document.createElement("button");
     salir.id = "raiet-cerrar-sesion";
