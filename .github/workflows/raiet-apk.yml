@@ -1,0 +1,387 @@
+
+# Firma permanente: activación inicial tras configurar los cuatro Repository secrets.
+name: Crear APK Android RAIET DEMO V1
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/raiet-apk.yml"
+      - "index.html"
+      - "acceso-esabas.js"
+      - "raiet-native-entry.js"
+      - "raiet-native.js"
+      - "mejoras.js"
+      - "edicion-financiera.js"
+      - "raiet-interacciones.js"
+      - "raiet-respaldo.js"
+      - "raiet-gestion.js"
+      - "raiet-inventario.js"
+      - "raiet-historia-clinica.js"
+      - "manifest.json"
+      - "sw.js"
+      - "icon-demo.svg"
+      - "tools/generar_iconos_demo.py"
+      - "icon-192.png"
+      - "icon-512.png"
+
+permissions:
+  contents: write
+
+jobs:
+  compilar-apk:
+    # Un parche exclusivo de la web no crea una APK innecesaria.
+    if: ${{ !contains(github.event.head_commit.message, '[web-only]') }}
+    name: Compilar APK RAIET DEMO V1 con huella y actualizaciones
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Obtener codigo RAIET
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Preparar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # GitHub Ubuntu 24.04 ya incorpora Android SDK.
+      # Evitamos el instalador que solicitaba
+      # el paquete obsoleto "tools".
+
+      - name: Preparar Android SDK
+        shell: bash
+        run: |
+          set -e
+
+          echo "Verificando Android SDK..."
+
+          echo "ANDROID_HOME=$ANDROID_HOME"
+
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "ERROR: No se encontro sdkmanager."
+            exit 1
+          fi
+
+          echo "Aceptando licencias Android..."
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+
+          echo "Instalando herramientas necesarias..."
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+          echo "Android SDK preparado."
+
+      - name: Preparar proyecto Android RAIET
+        env:
+          RAIET_DEMO_ANDROID_KEYSTORE_B64: ${{ secrets.RAIET_DEMO_ANDROID_KEYSTORE_B64 }}
+          RAIET_DEMO_ANDROID_STORE_PASSWORD: ${{ secrets.RAIET_DEMO_ANDROID_STORE_PASSWORD }}
+          RAIET_DEMO_ANDROID_ALIAS: ${{ secrets.RAIET_DEMO_ANDROID_ALIAS }}
+          RAIET_DEMO_ANDROID_KEY_PASSWORD: ${{ secrets.RAIET_DEMO_ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -e
+
+          cat > package.json <<'EOF'
+          {
+            "name": "raiet-demo-android",
+            "version": "1.0.0",
+            "private": true,
+            "dependencies": {
+              "@capacitor/core": "8.0.0",
+              "@capacitor/android": "8.0.0",
+              "@capacitor/app": "8.0.0",
+              "@capacitor/browser": "8.0.0",
+              "@capacitor/camera": "8.0.0",
+              "@capgo/capacitor-native-biometric": "^8.6.0"
+            },
+            "devDependencies": {
+              "@capacitor/cli": "8.0.0",
+              "esbuild": "^0.25.0"
+            }
+          }
+          EOF
+
+          echo "Instalando Capacitor..."
+          npm install --no-audit --no-fund
+
+          echo "Preparando archivos de RAIET..."
+          mkdir -p www
+          python3 -m venv .raiet-icon-venv
+          .raiet-icon-venv/bin/python -m pip install --quiet Pillow
+          .raiet-icon-venv/bin/python tools/generar_iconos_demo.py
+
+          cp index.html www/
+          cp acceso-esabas.js www/
+          cp mejoras.js www/
+          cp edicion-financiera.js www/
+          cp raiet-interacciones.js www/
+          cp raiet-respaldo.js www/
+          cp raiet-gestion.js www/
+          cp raiet-inventario.js www/
+          cp raiet-historia-clinica.js www/
+          cp manifest.json www/
+          cp icon-demo.svg www/
+          cp sw.js www/
+          cp icon-192.png www/
+          cp icon-512.png www/
+
+          echo "Generando puente nativo Android con lector biométrico y comprobador de versiones..."
+          npx esbuild raiet-native-entry.js --bundle --platform=browser --format=iife --minify --outfile=www/raiet-native.js
+          test -s www/raiet-native.js
+          node --check www/raiet-native.js
+
+          echo "Verificando componentes instalables..."
+          grep -q 'RAIET DEMO V1' www/index.html
+          grep -q 'mejoras.js?v=' www/index.html
+          grep -q 'edicion-financiera.js?v=' www/index.html
+          grep -q 'raiet-historia-clinica.js?v=' www/index.html
+          node --check www/raiet-interacciones.js
+          node --check www/raiet-respaldo.js
+          node --check www/raiet-gestion.js
+          node --check www/raiet-inventario.js
+          node --check www/raiet-historia-clinica.js
+          node --check www/mejoras.js
+          node --check www/edicion-financiera.js
+          node --check www/acceso-esabas.js
+          grep -q 'raiet-native.js' www/index.html
+          grep -q 'acceso-esabas.js' www/index.html
+          grep -q 'getSecureCredentials' www/acceso-esabas.js
+
+          # Si aún no existen los secretos de firma, construimos una edición beta
+          # con paquete distinto; jamás reemplazamos la aplicación instalada.
+          if [ -n "${RAIET_DEMO_ANDROID_KEYSTORE_B64:-}" ] \
+             && [ -n "${RAIET_DEMO_ANDROID_STORE_PASSWORD:-}" ] \
+             && [ -n "${RAIET_DEMO_ANDROID_ALIAS:-}" ] \
+             && [ -n "${RAIET_DEMO_ANDROID_KEY_PASSWORD:-}" ]; then
+            echo "RAIET_SIGNED=true" >> "$GITHUB_ENV"
+            APK_ID="com.esabas.raiet.demo"
+          else
+            echo "RAIET_SIGNED=false" >> "$GITHUB_ENV"
+            APK_ID="com.esabas.raiet.demo.beta"
+          fi
+          echo "Construyendo variante Android: $APK_ID"
+          cat > capacitor.config.json <<EOF
+          {
+            "appId": "$APK_ID",
+            "appName": "RAIET DEMO V1",
+            "webDir": "www",
+            "android": {
+              "allowMixedContent": false
+            }
+          }
+          EOF
+
+          echo "Creando proyecto Android..."
+          npx cap add android
+
+          echo "Verificando identificador Android..."
+          grep -q "appId" capacitor.config.json
+          grep -q "applicationId" android/app/build.gradle
+
+          echo "Asignando número de versión para futuras actualizaciones..."
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+          gradle = Path("android/app/build.gradle")
+          text = gradle.read_text()
+          version = int(os.environ["GITHUB_RUN_NUMBER"])
+          text, n = re.subn(r"versionCode\s+\d+", f"versionCode {version}", text, count=1)
+          assert n == 1, "No se encontró versionCode"
+          text, n = re.subn(r'versionName\s+"[^"]+"', f'versionName "1.0.{version}"', text, count=1)
+          assert n == 1, "No se encontró versionName"
+          gradle.write_text(text)
+          print("Versión nativa:", version)
+          PY
+
+          echo "Corrigiendo icono nativo de Android con el logo RAIET ya existente..."
+          .raiet-icon-venv/bin/python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          source = Path("www/icon-512.png")
+          assert source.is_file(), "Falta el icono original de RAIET"
+          logo = Image.open(source).convert("RGBA")
+          assert logo.size == (512, 512), "El icono de RAIET debe ser de 512x512"
+
+          res = Path("android/app/src/main/res")
+          densities = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}
+          for name, factor in densities.items():
+              folder = res / ("mipmap-" + name)
+              folder.mkdir(parents=True, exist_ok=True)
+              legacy = logo.resize((round(48 * factor), round(48 * factor)), Image.Resampling.LANCZOS)
+              foreground = logo.resize((round(108 * factor), round(108 * factor)), Image.Resampling.LANCZOS)
+              legacy.save(folder / "ic_launcher.png")
+              legacy.save(folder / "ic_launcher_round.png")
+              foreground.save(folder / "ic_launcher_foreground.png")
+
+          adaptive = res / "mipmap-anydpi-v26"
+          adaptive.mkdir(parents=True, exist_ok=True)
+          adaptive_xml = """<?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@android:color/transparent" />
+              <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+          </adaptive-icon>
+          """
+          (adaptive / "ic_launcher.xml").write_text(adaptive_xml, encoding="utf-8")
+          (adaptive / "ic_launcher_round.xml").write_text(adaptive_xml, encoding="utf-8")
+
+          for name, factor in densities.items():
+              expected = (round(48 * factor), round(48 * factor))
+              actual = Image.open(res / ("mipmap-" + name) / "ic_launcher.png").size
+              assert actual == expected, f"Icono incorrecto en {name}: {actual}"
+          print("Íconos nativos RAIET preparados: todos los tamaños y formato adaptable.")
+          PY
+
+          echo "Sincronizando archivos..."
+          npx cap sync android
+
+          echo "Proyecto Android preparado."
+
+      - name: Configurar firma Android permanente (si existe)
+        shell: bash
+        env:
+          RAIET_DEMO_ANDROID_KEYSTORE_B64: ${{ secrets.RAIET_DEMO_ANDROID_KEYSTORE_B64 }}
+        run: |
+          set -e
+          if [ "$RAIET_SIGNED" = "true" ]; then
+            printf "%s" "$RAIET_DEMO_ANDROID_KEYSTORE_B64" | base64 --decode > android/raiet-upload.jks
+            test -s android/raiet-upload.jks
+            python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/build.gradle")
+          text = p.read_text()
+          needle = "    buildTypes {"
+          assert text.count(needle) == 1, "No se encontró bloque buildTypes"
+          signed = """
+              signingConfigs {
+                  raiet {
+                      storeFile file('../raiet-upload.jks')
+                      storePassword System.getenv('RAIET_DEMO_ANDROID_STORE_PASSWORD')
+                      keyAlias System.getenv('RAIET_DEMO_ANDROID_ALIAS')
+                      keyPassword System.getenv('RAIET_DEMO_ANDROID_KEY_PASSWORD')
+                  }
+              }
+              buildTypes {
+                  debug {
+                      signingConfig signingConfigs.raiet
+                  }
+          """
+          text = text.replace(needle, signed, 1)
+          release = "        release {"
+          assert text.count(release) == 1, "No se encuentra buildType release"
+          text = text.replace(release, release + "\n            signingConfig signingConfigs.raiet", 1)
+          p.write_text(text)
+          print("Gradle configurado con firma estable para release y debug")
+          PY
+          else
+            echo "Modo prueba: APK firmada temporalmente con identificador beta."
+          fi
+
+      - name: Compilar APK Android
+        env:
+          RAIET_DEMO_ANDROID_STORE_PASSWORD: ${{ secrets.RAIET_DEMO_ANDROID_STORE_PASSWORD }}
+          RAIET_DEMO_ANDROID_ALIAS: ${{ secrets.RAIET_DEMO_ANDROID_ALIAS }}
+          RAIET_DEMO_ANDROID_KEY_PASSWORD: ${{ secrets.RAIET_DEMO_ANDROID_KEY_PASSWORD }}
+        working-directory: android
+        shell: bash
+        run: |
+          set -e
+
+          chmod +x gradlew
+
+          if [ "$RAIET_SIGNED" = "true" ]; then
+            ./gradlew assembleRelease --no-daemon
+            echo "RAIET_APK_PATH=android/app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_ENV"
+          else
+            ./gradlew assembleDebug --no-daemon
+            echo "RAIET_APK_PATH=android/app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_ENV"
+          fi
+
+      - name: Verificar APK
+        shell: bash
+        run: |
+          APK="$RAIET_APK_PATH"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: No se genero la APK."
+            exit 1
+          fi
+
+          echo "APK generada correctamente:"
+          ls -lh "$APK"
+          cp "$APK" RAIET-DEMO.apk
+          sha256sum RAIET-DEMO.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs RAIET-DEMO.apk
+
+          echo "Verificando icono real incluido dentro de la APK..."
+          .raiet-icon-venv/bin/python - <<'PY'
+          from PIL import Image, ImageChops, UnidentifiedImageError
+          from io import BytesIO
+          from zipfile import ZipFile
+
+          source = Image.open("www/icon-512.png").convert("RGBA")
+          inspected = 0
+          found = None
+          with ZipFile("RAIET-DEMO.apk") as apk:
+              for name in apk.namelist():
+                  # Android optimiza los nombres y rutas de recursos en release.
+                  # Comparar contenido en píxeles en lugar de depender de la ruta.
+                  if not name.startswith("res/") or not name.lower().endswith((".png", ".webp")):
+                      continue
+                  try:
+                      native = Image.open(BytesIO(apk.read(name))).convert("RGBA")
+                  except (UnidentifiedImageError, OSError, ValueError):
+                      continue
+                  if native.width < 48 or native.width != native.height:
+                      continue
+                  inspected += 1
+                  expected = source.resize(native.size, Image.Resampling.LANCZOS)
+                  if ImageChops.difference(native, expected).getbbox() is None:
+                      found = name
+                      break
+          assert found, f"No se reconoció el logo original RAIET en los {inspected} recursos gráficos del APK"
+          print(f"CONFIRMADO: logo original RAIET incorporado al APK firmado ({found}).")
+          PY
+
+      - name: Publicar APK para instalar
+        uses: actions/upload-artifact@v4
+        with:
+          name: RAIET-DEMO-Android-APK
+          path: RAIET-DEMO.apk
+          if-no-files-found: error
+          retention-days: 30
+
+
+      - name: Publicar APK corregida en GitHub Releases
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: raiet-demo-android-${{ github.run_number }}
+        run: |
+          set -e
+          if [ "$RAIET_SIGNED" = "true" ]; then
+            RAIET_RELEASE_FLAG="--latest"
+          else
+            RAIET_RELEASE_FLAG="--prerelease"
+          fi
+          gh release create "$TAG" RAIET-DEMO.apk \
+            --repo "$REPO" \
+            --target "$GITHUB_SHA" \
+            --title "RAIET DEMO V1 Android · Huella y actualizaciones" \
+            --notes "RAIET DEMO V1 con acceso biométrico protegido por Android Keystore y avisos de nuevas versiones. Las instalaciones firmadas permanentemente usan com.esabas.raiet.demo; las beta sin firma permanente usan com.esabas.raiet.demo.beta." \
+            ${RAIET_RELEASE_FLAG}
+          echo "DESCARGA_DIRECTA: https://github.com/$REPO/releases/latest/download/RAIET-DEMO.apk"
