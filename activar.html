@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer"><title>Activar cuenta | RAIET DEMO V1</title>
+<style>
+body{background:#080a10;color:#f8fafc;font:15px system-ui;display:grid;min-height:90vh;place-items:center}
+main{max-width:430px;width:90%;background:#111827;padding:23px;border:1px solid #334155;border-radius:14px}
+input,button{width:100%;box-sizing:border-box;padding:12px;margin:8px 0 12px;border-radius:8px;font-size:15px}
+input{background:#0b1020;color:white;border:1px solid #475569}button{background:#2563eb;color:white;border:0;font-weight:bold}
+p{color:#cbd5e1;line-height:1.5}a{color:#93c5fd}#info{white-space:pre-line}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script></head>
+<body><main><h2>RAIET DEMO V1</h2>
+<p>Activa tu cuenta o recupera el acceso. Necesitarás abrir un enlace enviado a tu correo.</p>
+<form id="solicitar" hidden><label>Correo electrónico<input id="correo" type="email" autocomplete="username" required></label><button>Enviar enlace de activación</button></form>
+<form id="establecer" hidden><label>Nueva contraseña<input id="clave" type="password" minlength="10" autocomplete="new-password" required></label><label>Repetir contraseña<input id="repetir" type="password" minlength="10" autocomplete="new-password" required></label><button>Guardar contraseña</button></form>
+<p id="info" role="status">Comprobando acceso…</p><a href="./index.html">Ir a RAIET DEMO</a></main>
+<script>
+(function(){
+"use strict";
+const db=window.supabase.createClient("https://lhqyibxpstrterlckaax.supabase.co","sb_publishable_-pnyO0CS974bqReuSkFP2g_6QHdYeTG",{auth:{detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}});
+const el=id=>document.getElementById(id);const msg=s=>{el("info").textContent=s};
+async function revisar(){
+try{
+const g=await db.auth.getUser();
+let autorizado=false;
+if(g.data?.user){const r=await db.rpc("demo_acceso_habilitado");autorizado=!r.error&&r.data===true;}
+el("establecer").hidden=!autorizado;el("solicitar").hidden=autorizado;
+msg(autorizado?"Cuenta verificada. Establece tu contraseña.":"Introduce el correo invitado para recibir un enlace de activación.");
+}catch(e){el("establecer").hidden=true;el("solicitar").hidden=false;msg("No se pudo verificar la sesión. Solicita un enlace de activación.")}
+}
+db.auth.onAuthStateChange(()=>setTimeout(revisar,0));
+el("solicitar").addEventListener("submit",async event=>{
+event.preventDefault();const btn=event.currentTarget.querySelector("button");btn.disabled=true;
+try{
+const url=new URL("./activar.html",window.location.href).href;
+const r=await db.auth.resetPasswordForEmail(el("correo").value.trim(),{redirectTo:url});
+if(r.error)throw r.error;
+msg("Si la cuenta existe, llegará un enlace a su correo. Abre el enlace para establecer la contraseña.");
+}catch(e){msg("No se pudo solicitar el enlace: "+(e.message||"error de red"))}finally{btn.disabled=false}
+});
+el("establecer").addEventListener("submit",async event=>{
+event.preventDefault();const btn=event.currentTarget.querySelector("button");btn.disabled=true;
+try{
+if(el("clave").value!==el("repetir").value)throw new Error("Las contraseñas no coinciden.");
+const r=await db.auth.updateUser({password:el("clave").value});
+if(r.error)throw r.error;
+el("clave").value="";el("repetir").value="";
+await db.auth.signOut({scope:"local"});
+el("establecer").hidden=true;el("solicitar").hidden=false;
+msg("Contraseña guardada. Ya puedes ingresar a la aplicación.");
+}catch(e){msg("No fue posible guardar la contraseña: "+(e.message||"error de red"))}finally{btn.disabled=false}
+});
+void revisar();
+})();
+</script></body></html>
