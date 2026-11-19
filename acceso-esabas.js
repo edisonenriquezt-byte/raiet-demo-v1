@@ -256,6 +256,7 @@
         </button>
 
         <p class="mensaje" id="raiet-mensaje" role="status"></p>
+        <p id="raiet-activar-web" style="font-size:12px"><a href="./activar.html" style="color:#93c5fd">Activar cuenta o recuperar contraseña</a></p>
       </div>
     `;
 
