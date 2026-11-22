@@ -1,18 +1,18 @@
-const CACHE_NAME = 'raiet-demo-web-v1-20261119';
+const CACHE_NAME = 'raiet-demo-web-v2-20261122';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
-  './acceso-esabas.js?v=20261119-demo1',
+  './acceso-esabas.js?v=20261122-demo2',
   './raiet-native.js',
   './icon-demo.svg',
-  './mejoras.js?v=20261119-demo1',
-  './edicion-financiera.js?v=20261119-demo1',
-  './raiet-interacciones.js?v=20261119-demo1',
-  './raiet-respaldo.js?v=20261119-demo1',
-  './raiet-gestion.js?v=20261119-demo1',
-  './raiet-inventario.js?v=20261119-demo1',
-  './raiet-historia-clinica.js?v=20261119-demo1',
+  './mejoras.js?v=20261122-demo2',
+  './edicion-financiera.js?v=20261122-demo2',
+  './raiet-interacciones.js?v=20261122-demo2',
+  './raiet-respaldo.js?v=20261122-demo2',
+  './raiet-gestion.js?v=20261122-demo2',
+  './raiet-inventario.js?v=20261122-demo2',
+  './raiet-historia-clinica.js?v=20261122-demo2',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
 ];
 

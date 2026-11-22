@@ -22,7 +22,7 @@
   let actualizacionConsultada = false;
   let autenticacionEnCurso = false;
   const CLAVE_ACTIVIDAD_WEB = "raiet_demo_web_ultima_actividad";
-  const VERSION_WEB = "1.0.1-demo";
+  const VERSION_WEB = "1.0.2-demo";
   function leerActividadWeb() {
     try { return Number(sessionStorage.getItem(CLAVE_ACTIVIDAD_WEB)) || 0; }
     catch (_) { return 0; }

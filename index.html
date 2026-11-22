@@ -128,7 +128,7 @@
   }
 </style>
 <script src="./raiet-native.js"></script>
-<script src="./acceso-esabas.js?v=20261119-demo1"></script>
+<script src="./acceso-esabas.js?v=20261122-demo2"></script>
 <!-- FIN CONTROL DE ACCESO -->
 
   <style>
@@ -704,7 +704,7 @@
         if (teniaControlador) ofrecerActualizacion();
         else teniaControlador = true;
       });
-      navigator.serviceWorker.register('./sw.js?v=20261119-demo1', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=20261122-demo2', { updateViaCache: 'none' })
         .then(function(registro) {
           if (registro.waiting) ofrecerActualizacion();
           function comprobarAlVolver() {
@@ -1664,12 +1664,40 @@
     }
 
     async function borrarCliente(id) {
-      if (!confirm('¿Eliminar cuenta completa?')) return;
-      cacheCobros = cacheCobros.filter(function(c) { return String(c.id) !== String(id); });
-      cacheCompromisos = cacheCompromisos.filter(function(cp) { return String(cp.cliente_id) !== String(id); });
-      guardarMemoriaLocal(); dibujarCobros();
-      if (navigator.onLine && db && !String(id).startsWith('loc_')) {
-        try { await db.from('clientes').delete().eq('id', id); } catch(e){}
+      // No se modifica el almacenamiento local hasta recibir confirmación explícita de Supabase.
+      if (!navigator.onLine || !db) {
+        alert('Necesitas conexión a internet para eliminar un cliente. No se realizó ningún cambio.');
+        return false;
+      }
+      if (String(id).startsWith('loc_')) {
+        alert('El cliente todavía no está sincronizado. Actualiza el listado antes de eliminarlo.');
+        return false;
+      }
+      var cliente = cacheCobros.find(function(c) { return String(c.id) === String(id); });
+      var nombre = cliente && cliente.nombre ? cliente.nombre : 'este cliente';
+      if (!confirm('¿Eliminar definitivamente a «' + nombre + '»?\n\nSolo se eliminarán fichas SIN cargos, abonos, asuntos jurídicos, citas ni cuotas. No se borrarán movimientos financieros.')) {
+        return false;
+      }
+      try {
+        var resultado = await db.rpc('demo_eliminar_cliente_sin_historial', { p_cliente_id: id });
+        if (resultado.error) throw new Error(resultado.error.message || 'Supabase rechazó la operación.');
+        if (!resultado.data || resultado.data.ok !== true) {
+          alert((resultado.data && resultado.data.mensaje) || 'Supabase no confirmó la eliminación.');
+          await cargarCobros();
+          return false;
+        }
+        cacheCobros = cacheCobros.filter(function(c) { return String(c.id) !== String(id); });
+        cacheCompromisos = cacheCompromisos.filter(function(cp) { return String(cp.cliente_id) !== String(id); });
+        guardarMemoriaLocal();
+        dibujarCobros();
+        if (typeof window.esabasCargarExpedientes === 'function') await window.esabasCargarExpedientes();
+        alert(resultado.data.mensaje || 'Cliente eliminado correctamente.');
+        return true;
+      } catch (error) {
+        console.error('Eliminación segura de cliente:', error);
+        alert('No se borró el cliente. ' + (error.message || 'Comprueba la conexión e inténtalo nuevamente.'));
+        try { await cargarCobros(); } catch (e) { console.error(e); }
+        return false;
       }
     }
 
@@ -2790,6 +2818,7 @@
       <div class="esabas-mini">📍 ${esc(c.direccion||'Sin dirección')}</div>
       ${c.observaciones?`<p class="esabas-mini">${esc(c.observaciones)}</p>`:''}
       <div class="esabas-tools"><button type="button" class="btn btn-secondary" data-legal="editar-cliente">Editar cliente</button>
+      <button type="button" class="btn btn-danger" data-legal="eliminar-cliente">✕ Eliminar cliente</button>
       <button type="button" class="btn btn-primary" data-legal="nuevo-asunto">+ Asunto jurídico</button>
       <button type="button" class="btn btn-secondary" data-legal="ir-cobros">Ver módulo de cobros</button></div>
       <div class="esabas-cols"><div class="esabas-linea"><b>${moneda(r.total)}</b><div class="esabas-mini">Total obligaciones</div></div>
@@ -3079,6 +3108,12 @@
           break;
         }
         case 'editar-cliente':formularioCliente(state.clientes.find(c=>idIgual(c.id,state.clienteId)));el('esabas-cliente-form').dataset.editar='true';break;
+        case 'eliminar-cliente':{
+          b.disabled=true;
+          try { await window.borrarCliente(state.clienteId); }
+          finally { b.disabled=false; }
+          break;
+        }
         case 'cancelar-cliente':el('esabas-form-cliente').hidden=true;break;
         case 'ver-cliente':state.clienteId=id;state.asuntoId=null;el('esabas-form-cliente').hidden=true;dibujarLista();dibujarFicha();el('esabas-ficha-cliente').scrollIntoView({block:'start',behavior:'smooth'});break;
         case 'nuevo-asunto':state.asuntoId=null;formularioAsunto(null);break;
@@ -3141,12 +3176,12 @@
 })();
 
 </script>
-<script src="./mejoras.js?v=20261119-demo1"></script>
-<script src="./edicion-financiera.js?v=20261119-demo1"></script>
-<script src="./raiet-interacciones.js?v=20261119-demo1"></script>
-<script src="./raiet-respaldo.js?v=20261119-demo1"></script>
-<script src="./raiet-gestion.js?v=20261119-demo1"></script>
-<script src="./raiet-inventario.js?v=20261119-demo1"></script>
-<script src="./raiet-historia-clinica.js?v=20261119-demo1"></script>
+<script src="./mejoras.js?v=20261122-demo2"></script>
+<script src="./edicion-financiera.js?v=20261122-demo2"></script>
+<script src="./raiet-interacciones.js?v=20261122-demo2"></script>
+<script src="./raiet-respaldo.js?v=20261122-demo2"></script>
+<script src="./raiet-gestion.js?v=20261122-demo2"></script>
+<script src="./raiet-inventario.js?v=20261122-demo2"></script>
+<script src="./raiet-historia-clinica.js?v=20261122-demo2"></script>
 </body>
 </html>
