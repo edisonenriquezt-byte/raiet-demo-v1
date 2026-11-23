@@ -45,7 +45,7 @@ function diasHasta(x){
 function alertasLegales(){
  var s=window.esabasState;
  if(!s||!Array.isArray(s.actuaciones)||document.documentElement.classList.contains("raiet-bloqueado"))return [];
- var alertasGenerales=s.actuaciones.filter(function(a){return a.proxima_fecha && a.estado_vencimiento!=="cumplido";}).map(function(a){
+ var alertasGenerales=s.actuaciones.filter(function(a){var asunto=s.asuntos.find(x=>String(x.id)===String(a.asunto_id));var cliente=asunto?s.clientes.find(x=>String(x.id)===String(asunto.cliente_id)):null;return !!cliente && cliente.tipo_registro==="real" && !cliente.archivado && a.proxima_fecha && a.estado_vencimiento!=="cumplido";}).map(function(a){
   var dias=diasHasta(a.proxima_fecha);if(!Number.isFinite(dias)||dias>7)return null;
   var asunto=s.asuntos.find(function(x){return String(x.id)===String(a.asunto_id);});
   var cliente=asunto?s.clientes.find(function(x){return String(x.id)===String(asunto.cliente_id);}):null;
@@ -54,6 +54,9 @@ function alertasLegales(){
  }).filter(Boolean);
  var proximasAlarmas=s.actuaciones.filter(function(a){
   if(!a.fecha_alarma || a.estado_vencimiento==="cumplido")return false;
+  var asunto=s.asuntos.find(x=>String(x.id)===String(a.asunto_id));
+  var cliente=asunto?s.clientes.find(x=>String(x.id)===String(asunto.cliente_id)):null;
+  if(!cliente||cliente.tipo_registro!=="real"||cliente.archivado)return false;
   var ms=new Date(a.fecha_alarma).getTime()-Date.now();
   return Number.isFinite(ms) && ms<=86400000 && ms>=-86400000;
  }).map(function(a){
