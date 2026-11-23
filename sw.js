@@ -1,16 +1,16 @@
-const CACHE_NAME = 'raiet-demo-web-v6-20261123';
+const CACHE_NAME = 'raiet-demo-web-v8-20261123';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
-  './acceso-esabas.js?v=20261123-demo6',
+  './acceso-esabas.js?v=20261123-demo8',
   './raiet-native.js',
   './icon-192.png',
   './icon-512.png',
   './mejoras.js?v=20261122-demo2',
   './edicion-financiera.js?v=20261122-demo2',
   './raiet-interacciones.js?v=20261122-demo2',
-  './raiet-respaldo.js?v=20261122-demo2',
+  './raiet-respaldo.js?v=20261123-demo8',
   './raiet-gestion.js?v=20261122-demo2',
   './raiet-inventario.js?v=20261122-demo2',
   './raiet-historia-clinica.js?v=20261122-demo2',

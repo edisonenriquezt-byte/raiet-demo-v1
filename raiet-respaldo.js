@@ -32,13 +32,13 @@ async function sha256(bytes){
  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes)));
 }
 async function verificarAcceso() {
- if(!navigator.onLine)throw new Error("Para generar el respaldo necesitas conexión a Supabase.");
+ if(!navigator.onLine)throw new Error("Para crear una copia de seguridad necesitas conexión a internet.");
  if(document.documentElement.classList.contains("raiet-bloqueado"))
    throw new Error("Primero debes acceder a RAIET.");
  if(!window.crypto?.subtle || !window.crypto?.getRandomValues)
    throw new Error("Este navegador no ofrece cifrado seguro WebCrypto.");
  const cliente=window.db;
- if(!cliente)throw new Error("Supabase no está disponible.");
+ if(!cliente)throw new Error("No se pudo conectar con el servicio.");
  const r=await cliente.auth.getUser();
  if(r.error || !r.data?.user || !(await window.RAIET_DEMO_AUTORIZADO()))
    throw new Error("No hay una sesión autorizada para respaldar expedientes.");
@@ -49,14 +49,14 @@ async function obtenerDatos(client,status){
  let totalFilas=0;
  for(let i=0;i<TABLAS.length;i++){
    const tabla=TABLAS[i], filas=[];
-   status("Leyendo tablas "+(i+1)+"/"+TABLAS.length+": "+tabla);
+   status("Preparando la copia de seguridad: "+(i+1)+"/"+TABLAS.length);
    for(let desde=0;desde<100000;desde+=500) {
      const resp=await client.from(tabla).select("*").order("id",{ascending:true}).range(desde,desde+499);
-     if(resp.error)throw new Error("No se pudo respaldar "+tabla+": "+resp.error.message);
+     if(resp.error){console.error("[RAIET] Error de respaldo",resp.error);throw new Error("No se pudo completar la copia. Comprueba la conexión y vuelve a intentarlo.");}
      const chunk=resp.data||[];
      filas.push(...chunk);
      if(chunk.length<500)break;
-     if(desde>=99500)throw new Error("Demasiados registros en "+tabla+". No se generó un respaldo parcial.");
+     if(desde>=99500)throw new Error("El volumen de información supera el límite de esta operación. No se creó una copia incompleta.");
    }
    tablas[tabla]=filas;totalFilas+=filas.length;
  }
@@ -69,11 +69,11 @@ async function obtenerDatos(client,status){
  for(let i=0;i<referencias.length;i++){
    const ref=referencias[i];
    status("Copiando documentos privados "+(i+1)+"/"+referencias.length);
-   if(!ref.ruta)throw new Error("Adjunto sin ruta en Supabase.");
+   if(!ref.ruta)throw new Error("No se pudo localizar uno de los archivos necesarios para la copia.");
    const r=await client.storage.from(ref.bucket).download(ref.ruta);
    if(r.error || !r.data)throw new Error("No se pudo respaldar «"+(ref.nombre||"adjunto")+"»: "+(r.error?.message||"sin contenido"));
    const bytes=new Uint8Array(await r.data.arrayBuffer());
-   if(!bytes.length)throw new Error("Documento vacío en Storage: "+(ref.nombre_archivo||"adjunto"));
+   if(!bytes.length)throw new Error("No se pudo incluir un documento sin contenido: "+(ref.nombre_archivo||"adjunto"));
    archivos.push({
      ruta:ref.ruta,
      bucket:ref.bucket,
@@ -86,7 +86,7 @@ async function obtenerDatos(client,status){
  return {
    formato:"RAIET-DEMO-DATOS-1",proyecto:PROYECTO,creado:new Date().toISOString(),
    totalFilas,tablas,archivos,
-   nota:"Copia lógica de datos de usuario y adjuntos privados. No incluye cuentas de Auth ni configuración interna de Supabase."
+   nota:"Copia cifrada de información y documentos. No incluye contraseñas de acceso ni ajustes internos del servicio."
  };
 }
 async function comprimir(bytes) {
@@ -139,7 +139,7 @@ async function descifrar(contenido,clave){
  if(payload.formato!=="RAIET-DEMO-DATOS-1" || payload.proyecto!==PROYECTO)
    throw new Error("Este archivo no contiene los datos del proyecto RAIET.");
  if(!payload.tablas || !(TABLAS.every(t=>Array.isArray(payload.tablas[t])) || TABLAS.slice(0,TABLAS.length-3).every(t=>Array.isArray(payload.tablas[t])) || TABLAS.slice(0,19).every(t=>Array.isArray(payload.tablas[t]))))
-   throw new Error("El respaldo no contiene las tablas principales esperadas.");
+   throw new Error("El archivo de respaldo está incompleto o no es compatible.");
  let filas=0;
  for(const t of Object.keys(payload.tablas))filas+=payload.tablas[t].length;
  if(filas!==payload.totalFilas)throw new Error("No coincide el conteo de registros.");
@@ -191,7 +191,7 @@ function abrirDialogo(){
  panel.style.cssText="width:100%;max-width:520px;padding:18px;background:#101827;border:1px solid #64748b;border-radius:12px;color:#fff;line-height:1.5;font:14px Arial";
  const titulo=document.createElement("h3");titulo.textContent="Respaldo cifrado de RAIET";
  const ayuda=document.createElement("p");
- ayuda.textContent="Copia las 21 tablas, incluyendo Gestión, y los documentos jurídicos privados. Guárdala FUERA de Supabase. La contraseña no se almacena; perderla impide recuperar la copia.";
+ ayuda.textContent="Crea una copia de seguridad protegida por contraseña. Descárgala y consérvala en un lugar seguro, fuera de esta aplicación. No guardamos tu contraseña: si la olvidas, no podrás recuperar la copia.";
  ayuda.style.cssText="margin:12px 0;color:#cbd5e1";
  const clave=document.createElement("input");
  clave.type="password";clave.placeholder="Contraseña para el respaldo (mínimo 12 caracteres)";clave.autocomplete="new-password";clave.style.cssText="width:100%;padding:12px;margin:8px 0;background:#111e32;color:white;border:1px solid #64748b;border-radius:8px";
@@ -233,7 +233,7 @@ function abrirDialogo(){
   // Validación inmediata del cifrado antes de ofrecer la descarga.
   const prueba=await descifrar(JSON.stringify(cifrado),pass);
   descargarArchivo(cifrado);
-  decir("✓ Copia cifrada generada y comprobada: "+prueba.filas+" registros, "+prueba.archivos+" adjuntos. Verifica que el archivo se descargó y guárdalo fuera de Supabase.");
+  decir("✓ Copia de seguridad cifrada creada y verificada correctamente. Comprueba que el archivo se haya descargado y consérvalo en un lugar seguro.");
  }));
  verificar.addEventListener("click",()=>ejecutar(async()=>{
   if(!archivo.files?.[0])throw new Error("Selecciona primero tu archivo .raietbak.");
@@ -241,7 +241,7 @@ function abrirDialogo(){
   if(!window.crypto?.subtle)throw new Error("Este navegador no permite descifrar archivos.");
   decir("Comprobando el archivo, contraseña e integridad de documentos…");
   const res=await descifrar(await archivo.files[0].text(),clave.value);
-  decir("✓ RESPALDO VÁLIDO: "+res.filas+" registros, "+res.archivos+" adjuntos. Fecha: "+res.fecha+". No se modificó la base de datos.");
+  decir("✓ Archivo de respaldo válido. Fecha de la copia: "+res.fecha+". No se modificó tu información actual.");
  }));
  cerrar.addEventListener("click",()=>{if(!ocupado)cubre.remove();});
  cubre.addEventListener("click",e=>{if(e.target===cubre&&!ocupado)cubre.remove();});
