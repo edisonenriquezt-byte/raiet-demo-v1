@@ -789,6 +789,27 @@
     function limpiarFiltro(id, renderFn) { document.getElementById(id).value = ''; renderFn(); }
     function abrirVisor(url) { if (!url) return; document.getElementById('img-ampliada').src = url; document.getElementById('modal-visor').classList.add('active'); }
 
+    // Confirmación visual propia de RAIET, sin encabezado del navegador.
+    window.raietConfirmar = function(mensaje) {
+      return new Promise(function(resolver) {
+        var fondo=document.createElement('div');
+        fondo.setAttribute('role','dialog');fondo.setAttribute('aria-modal','true');
+        fondo.setAttribute('aria-label','Confirmar operación');
+        fondo.style.cssText='position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);padding:16px;';
+        var panel=document.createElement('div');
+        panel.style.cssText='width:min(440px,100%);background:#101827;color:white;border:1px solid #475569;border-radius:14px;padding:22px;box-shadow:0 16px 55px #0009;';
+        var titulo=document.createElement('h3');titulo.textContent='RAIET ESABAS · Confirmación';titulo.style.cssText='margin:0 0 12px;font-size:17px;';
+        var texto=document.createElement('p');texto.textContent=mensaje;texto.style.cssText='white-space:pre-wrap;line-height:1.5;font-size:14px;margin:0 0 22px;';
+        var acciones=document.createElement('div');acciones.style.cssText='display:flex;gap:9px;justify-content:flex-end;';
+        function terminar(aprobado){fondo.remove();resolver(aprobado);}
+        var cancelar=document.createElement('button');cancelar.textContent='Cancelar';cancelar.type='button';cancelar.className='btn btn-secondary';cancelar.addEventListener('click',()=>terminar(false));
+        var aceptar=document.createElement('button');aceptar.textContent='Aceptar';aceptar.type='button';aceptar.className='btn btn-danger';aceptar.addEventListener('click',()=>terminar(true));
+        acciones.append(cancelar,aceptar);panel.append(titulo,texto,acciones);fondo.append(panel);document.body.append(fondo);
+        fondo.addEventListener('click',e=>{if(e.target===fondo)terminar(false);});
+        fondo.addEventListener('keydown',e=>{if(e.key==='Escape')terminar(false);});
+        cancelar.focus();
+      });
+    };
     function cambiarPestana(tab, btn) {
       var contents = document.querySelectorAll('.tab-content');
       for (var i = 0; i < contents.length; i++) contents[i].classList.remove('active');
@@ -1027,6 +1048,7 @@
       var limite72h = new Date(hoy.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
       cacheAgenda.forEach(function(c) {
+        if(c.archivado || c.tipo_registro==='ficticio' || (c.cliente_id&&!raietClienteReal(c.cliente_id)))return;
         if(c.actuacion_id) return; // Evita avisos jurídicos duplicados
         if (!c.completada && (c.fecha_evento || c.fecha_alarma)) {
           var ref = c.fecha_alarma || c.fecha_evento;
@@ -1040,6 +1062,7 @@
       });
 
       cacheCompromisos.forEach(function(cp) {
+        if (!raietCompromisoReal(cp))return;
         if (cp.estado !== 'cumplido' && cp.fecha_pactada) {
           if (cp.fecha_pactada <= limite72h) {
             var tag = cp.fecha_pactada < hoyStr ? '⚠️ Mora (' + cp.fecha_pactada + '): ' : (cp.fecha_pactada === hoyStr ? '💵 Cuota pactada hoy: ' : '⏳ En 48-72h (' + cp.fecha_pactada + '): ');
@@ -1070,6 +1093,7 @@
     }
 
     async function guardarAgenda() {
+      var tipoRegistro=document.getElementById('agenda-tipo')?.value||'real';
       var titulo = document.getElementById('agenda-titulo').value.trim();
       var detalle = document.getElementById('agenda-detalle').value.trim();
       var fecha = document.getElementById('agenda-fecha').value;
@@ -1079,7 +1103,7 @@
 
       procesarArchivoImagen(document.getElementById('agenda-foto'), async function(fotoBase64) {
         var isoFecha = new Date(fecha).toISOString();
-        var item = { id: 'loc_' + Date.now(), titulo: titulo, detalle: detalle, fecha_evento: isoFecha, fecha_alarma: isoAlarma, completada: false, foto_url: fotoBase64 };
+        var item = { id: 'loc_' + Date.now(), titulo: titulo, detalle: detalle, fecha_evento: isoFecha, fecha_alarma: isoAlarma, completada: false, foto_url: fotoBase64, tipo_registro:tipoRegistro };
         cacheAgenda.push(item);
         guardarMemoriaLocal();
         dibujarAgenda();
@@ -1092,7 +1116,7 @@
 
         if (navigator.onLine && db) {
           try {
-            var payload = { titulo: titulo, detalle: detalle, fecha_evento: isoFecha, completada: false, foto_url: fotoBase64 };
+            var payload = { titulo: titulo, detalle: detalle, fecha_evento: isoFecha, completada: false, foto_url: fotoBase64, tipo_registro:tipoRegistro };
             if (isoAlarma) payload.fecha_alarma = isoAlarma;
             var ins = await db.from('agenda').insert(payload).select().single();
             if (ins.data) { item.id = ins.data.id; guardarMemoriaLocal(); }
@@ -1160,26 +1184,30 @@
     }
 
     async function borrarAgenda(id) {
-      if (!confirm('¿Eliminar cita?')) return;
-      cacheAgenda = cacheAgenda.filter(function(x) { return String(x.id) !== String(id); });
-      guardarMemoriaLocal(); dibujarAgenda();
-      if (navigator.onLine && db && !String(id).startsWith('loc_')) {
-        try { await db.from('agenda').delete().eq('id', id); } catch(e){}
-      }
+      var item=cacheAgenda.find(x=>String(x.id)===String(id));
+      if(!item||item.tipo_registro!=='ficticio'){alert('Las citas reales se archivan; solo se eliminan pruebas.');return;}
+      if(!navigator.onLine||!db){alert('Conéctate para eliminar.');return;}
+      if(!await window.raietConfirmar('¿Eliminar definitivamente esta cita de prueba?'))return;
+      try{
+        var r=await db.rpc('raiet_eliminar_registro_ficticio',{p_tipo:'agenda',p_id:String(id)});
+        if(r.error||!r.data?.ok)throw Error(r.error?.message||r.data?.mensaje||'No se pudo completar.');
+        cacheAgenda=cacheAgenda.filter(x=>String(x.id)!==String(id));
+        guardarMemoriaLocal();dibujarAgenda();
+      }catch(e){alert('No se eliminó: '+e.message);await cargarAgenda();}
     }
 
     function renderAgenda() { dibujarAgenda(); }
     function dibujarAgenda() {
-      var lista = cacheAgenda.slice();
+      var lista = cacheAgenda.filter(function(v){return !!v.archivado===raietMostrarArchivados.agenda && v.tipo_registro===raietFiltroTipos.agenda;});
       var q = (document.getElementById('buscar-agenda').value || '').toLowerCase().trim();
       var filtroMes = document.getElementById('filtro-agenda').value;
       if (q) lista = lista.filter(function(x) { return (x.titulo && x.titulo.toLowerCase().includes(q)) || (x.detalle && x.detalle.toLowerCase().includes(q)); });
       if (filtroMes) lista = lista.filter(function(x) { return x.fecha_evento && x.fecha_evento.startsWith(filtroMes); });
 
       var cont = document.getElementById('lista-agenda');
-      if (!lista.length) { cont.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:20px;">No hay citas registradas.</p>'; return; }
+      if (!lista.length) { cont.innerHTML = raietBarraArchivo('agenda','dibujarAgenda')+'<p style="color:var(--text-muted); text-align:center; padding:20px;">No hay eventos en esta sección.</p>'; return; }
 
-      var html = '';
+      var html = raietBarraArchivo('agenda','dibujarAgenda');
       for (var i = 0; i < lista.length; i++) {
         var x = lista[i];
         var seguro = function(v) {return String(v||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
@@ -1194,6 +1222,7 @@
           (x.detalle ? '<div style="font-size:0.82rem; color:#cbd5e1; background:var(--card-inner); padding:7px 10px; border-radius:6px; margin:8px 0;">📝 ' + detalleSeguro + '</div>' : '') +
           (x.foto_url ? '<button class="thumb-btn" style="margin-top:6px;" onclick="abrirVisor(\'' + x.foto_url + '\')">📷 Ver Documento</button>' : '') +
           '<div style="display:flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">' +
+            (x.tipo_registro==='sin_clasificar'?'<button class="btn btn-secondary" onclick="raietClasificarAntiguo(\'agenda\',\''+x.id+'\',\'real\')">Es real</button><button class="btn btn-secondary" onclick="raietClasificarAntiguo(\'agenda\',\''+x.id+'\',\'ficticio\')">Es prueba</button>':'')+'<button class="btn btn-secondary" onclick="raietArchivar(\'agenda\',\''+x.id+'\','+(!x.archivado)+')">'+(x.archivado?'↩ Restaurar':'📦 Archivar')+'</button>' +
             (x.gestion_id ? '<button class="btn btn-secondary" onclick="window.raietAbrirGestion(\'' + x.gestion_id + '\')">🧭 Abrir en Gestión</button>' :
             x.actuacion_id ? '<span style="color:#93c5fd;font-size:0.73rem">⚖ Evento del expediente. Editar desde Clientes.</span>' :
             '<button class="btn btn-secondary" onclick="abrirModalEditarAgenda(\'' + x.id + '\')">✏️ Editar</button>' +
@@ -1206,6 +1235,54 @@
     }
 
     // 2. COBROS
+
+    // Archivo reversible: no modifica saldos, fotos ni movimientos.
+    var raietMostrarArchivados = { clientes:false, acreedores:false, agenda:false };
+    var raietFiltroTipos = {clientes:'real',acreedores:'real',agenda:'real'};
+    function raietTipoCambio(clave,refrescar){
+      raietFiltroTipos[clave]=document.getElementById('raiet-tipo-'+clave)?.value||'real';
+      refrescar();
+    }
+    async function raietClasificarAntiguo(tabla,id,tipo){
+      if(!navigator.onLine||!db){alert('Necesitas conexión para clasificar.');return;}
+      if(!confirm('¿Confirmas que este registro antiguo y sus movimientos son '+(tipo==='ficticio'?'FICTICIOS':'REALES')+'? No podrás cambiar el tipo después.'))return;
+      try{
+        var r=await db.rpc(tabla==='clientes'?'raiet_clasificar_cliente_existente':'raiet_clasificar_registro_antiguo',tabla==='clientes'?{p_cliente:id,p_tipo:tipo}:{p_tabla:tabla,p_id:id,p_tipo:tipo});
+        if(r.error||!r.data?.ok)throw new Error(r.error?.message||r.data?.mensaje||'No se pudo clasificar.');
+        raietFiltroTipos[tabla]=tipo;
+        if(tabla==='clientes'){await cargarCobros();if(window.esabasCargarExpedientes)await window.esabasCargarExpedientes();}
+        if(tabla==='acreedores')await cargarPagos();
+        if(tabla==='agenda')await cargarAgenda();
+      }catch(e){alert('No se modificó el registro: '+e.message);}
+    }
+    window.raietClasificarAntiguo=raietClasificarAntiguo;
+    function raietFiltroArchivo(clave, tipo, refrescar) {
+      raietMostrarArchivados[clave] = !!document.getElementById('raiet-ver-'+clave)?.checked;
+      refrescar();
+    }
+    function raietBarraArchivo(clave, refrescarNombre) {
+      return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><label style="font-size:.82rem;color:#cbd5e1">Mostrar <select id="raiet-tipo-'+clave+'" onchange="raietTipoCambio(\''+clave+'\','+refrescarNombre+')" style="background:#111827;color:white;padding:6px"><option value="real" '+(raietFiltroTipos[clave]==='real'?'selected':'')+'>Reales</option><option value="ficticio" '+(raietFiltroTipos[clave]==='ficticio'?'selected':'')+'>Ficticios / Pruebas</option><option value="sin_clasificar" '+(raietFiltroTipos[clave]==='sin_clasificar'?'selected':'')+'>Antiguos sin clasificar</option></select></label><label style="display:flex;gap:8px;align-items:center;color:var(--text-muted);font-size:.82rem"><input id="raiet-ver-'+clave+'" type="checkbox" '+(raietMostrarArchivados[clave]?'checked':'')+' onchange="raietFiltroArchivo(\''+clave+'\',null,'+refrescarNombre+')"> Ver archivados</label></div>';
+    }
+    async function raietArchivar(tabla,id,archivar) {
+      if (!navigator.onLine || !db) { alert('Necesitas conexión a internet. No se modificó nada.'); return false; }
+      if (String(id).startsWith('loc_')) { alert('Primero sincroniza este registro.'); return false; }
+      if (archivar && !confirm('¿Archivar este registro? Se ocultará de la lista activa, pero se conservarán documentos, saldos e historial.')) return false;
+      if (!archivar && !confirm('¿Restaurar este registro a la lista activa?')) return false;
+      try {
+        var r=await db.from(tabla).update({archivado:archivar}).eq('id',id).select('id,archivado').single();
+        if(r.error || !r.data || r.data.archivado!==archivar) throw new Error(r.error?.message||'No se confirmó el cambio.');
+        var registros=tabla==='clientes'?cacheCobros:tabla==='acreedores'?cachePagos:tabla==='agenda'?cacheAgenda:null;
+        if(registros){var registro=registros.find(x=>String(x.id)===String(id));if(registro)registro.archivado=archivar;}
+        guardarMemoriaLocal();
+        if(tabla==='clientes'){dibujarCobros();if(typeof window.esabasCargarExpedientes==='function')await window.esabasCargarExpedientes();}
+        else if(tabla==='acreedores')dibujarPagos();
+        else if(tabla==='agenda')dibujarAgenda();
+        alert(archivar?'Registro archivado. Podrás restaurarlo desde «Ver archivados».':'Registro restaurado correctamente.');
+        return true;
+      } catch(e) { alert('No se cambió el estado del registro: '+e.message); return false; }
+    }
+    window.raietArchivar=raietArchivar;
+
     async function cargarCobros() {
       dibujarCobros();
       if (navigator.onLine && db) {
@@ -1225,9 +1302,12 @@
       var cliExistente = document.getElementById('cobro-cliente-existente').value;
       var asuntoExistente = document.getElementById('cobro-asunto-existente').value;
       var fichaExistente = null;
+      var tipoRegistro=document.getElementById('cobro-tipo')?.value||'real';
       if (cliExistente) {
         fichaExistente = cacheCobros.find(function(c) {return String(c.id) === String(cliExistente);});
         if (!fichaExistente) return alert('No se encontró el cliente. Actualiza la ficha antes de registrar.');
+        if(fichaExistente.archivado) return alert('Restaura primero la cuenta archivada.');
+        tipoRegistro=fichaExistente.tipo_registro||'real';
         nombre = fichaExistente.nombre;
       } else if (cacheCobros.some(function(c) {return (c.nombre||'').trim().toLowerCase() === nombre.toLowerCase();})) {
         return alert('Ya existe una ficha con ese nombre. Selecciona el cliente registrado para no duplicarlo.');
@@ -1261,7 +1341,7 @@
         };
 
         var nuevoCli = {
-          id: idCli, nombre: nombre, telefono: tel,
+          id: idCli, nombre: nombre, telefono: tel, tipo_registro:tipoRegistro,
           cobros_cargos: [nuevoCargo],
           cobros_abonos: []
         };
@@ -1308,7 +1388,7 @@
 
         if (navigator.onLine && db) {
           try {
-            var c = cliExistente ? { data: { id: cliExistente } } : await db.from('clientes').insert({ nombre: nombre, telefono: tel }).select().single();
+            var c = cliExistente ? { data: { id: cliExistente } } : await db.from('clientes').insert({ nombre: nombre, telefono: tel, tipo_registro:tipoRegistro }).select().single();
             if (c.data) {
               nuevoCli.id = c.data.id;
               nuevoCargo.cliente_id = c.data.id;
@@ -1663,47 +1743,57 @@
       }
     }
 
-    async function borrarCliente(id) {
-      // No se modifica el almacenamiento local hasta recibir confirmación explícita de Supabase.
-      if (!navigator.onLine || !db) {
-        alert('Necesitas conexión a internet para eliminar un cliente. No se realizó ningún cambio.');
-        return false;
-      }
-      if (String(id).startsWith('loc_')) {
-        alert('El cliente todavía no está sincronizado. Actualiza el listado antes de eliminarlo.');
-        return false;
-      }
-      var cliente = cacheCobros.find(function(c) { return String(c.id) === String(id); });
-      var nombre = cliente && cliente.nombre ? cliente.nombre : 'este cliente';
-      if (!confirm('¿Eliminar definitivamente a «' + nombre + '»?\n\nSolo se eliminarán fichas SIN cargos, abonos, asuntos jurídicos, citas ni cuotas. No se borrarán movimientos financieros.')) {
-        return false;
-      }
+    async function raietLimpiarArchivosPendientes(id) {
       try {
-        var resultado = await db.rpc('demo_eliminar_cliente_sin_historial', { p_cliente_id: id });
-        if (resultado.error) throw new Error(resultado.error.message || 'Supabase rechazó la operación.');
-        if (!resultado.data || resultado.data.ok !== true) {
-          alert((resultado.data && resultado.data.mensaje) || 'Supabase no confirmó la eliminación.');
-          await cargarCobros();
-          return false;
+        var r=await db.from('raiet_purgas_archivos').select('id,ruta,bucket').eq('cliente_id',id).eq('estado','pendiente');
+        if(r.error)throw r.error;
+        for(var x of (r.data||[])){
+          var z=await db.storage.from(x.bucket).remove([x.ruta]);
+          if(z.error)throw z.error;
+          var ok=await db.from('raiet_purgas_archivos').update({estado:'completado'}).eq('id',x.id).select('id').single();
+          if(ok.error)throw ok.error;
         }
-        cacheCobros = cacheCobros.filter(function(c) { return String(c.id) !== String(id); });
-        cacheCompromisos = cacheCompromisos.filter(function(cp) { return String(cp.cliente_id) !== String(id); });
+        return true;
+      }catch(error){console.warn('No se pudo completar la limpieza de documentos:',error);return false;}
+    }
+    async function borrarCliente(id) {
+      if(!navigator.onLine||!db){alert('Necesitas conexión a internet. No se realizó ningún cambio.');return false;}
+      if(String(id).startsWith('loc_')){alert('Sincroniza primero la cuenta.');return false;}
+      // La ficha jurídica y el listado de Cobros mantienen cachés distintos.
+      // La fuente de verdad para permitir eliminar es el registro confirmado en el servidor.
+      var consultaCliente=await db.from('clientes').select('id,nombre,tipo_registro').eq('id',id).single();
+      if(consultaCliente.error||!consultaCliente.data){
+        alert('No se pudo verificar la clasificación del cliente. No se eliminó nada.');
+        return false;
+      }
+      var cliente=consultaCliente.data;
+      if(cliente.tipo_registro!=='ficticio'){
+        alert('El registro no figura como ficticio en la información actualizada. No se eliminó nada.');
+        return false;
+      }
+      var fichaCache=cacheCobros.find(x=>String(x.id)===String(id));
+      if(fichaCache)fichaCache.tipo_registro=cliente.tipo_registro;
+      if(!await window.raietConfirmar('¿ELIMINAR DEFINITIVAMENTE esta cuenta de PRUEBA?\\n\\n'+cliente.nombre+'\\n\\nSe eliminarán sus asuntos, citas, cobros, abonos y movimientos relacionados. Esta acción no se puede deshacer.'))return false;
+      try {
+        var r=await db.rpc('raiet_eliminar_cliente_prueba',{p_cliente:id});
+        if(r.error||!r.data?.ok)throw new Error(r.error?.message||r.data?.mensaje||'No se confirmó la eliminación.');
+        cacheCobros=cacheCobros.filter(x=>String(x.id)!==String(id));
+        cacheCompromisos=cacheCompromisos.filter(x=>String(x.cliente_id)!==String(id));
+        cacheAgenda=cacheAgenda.filter(x=>String(x.cliente_id)!==String(id));
+        cobrosAbiertos=cobrosAbiertos.filter(x=>String(x)!==String(id));
         guardarMemoriaLocal();
         dibujarCobros();
-        if (typeof window.esabasCargarExpedientes === 'function') await window.esabasCargarExpedientes();
-        alert(resultado.data.mensaje || 'Cliente eliminado correctamente.');
+        var archivosOk=await raietLimpiarArchivosPendientes(id);
+        if(typeof window.esabasCargarExpedientes==='function')await window.esabasCargarExpedientes();
+        if(typeof cargarAgenda==='function')await cargarAgenda();
+        alert(archivosOk?'Cuenta de prueba eliminada correctamente.':'Cuenta de prueba eliminada. Algunos archivos están pendientes de limpieza; RAIET conservará el registro técnico para completar esa limpieza.');
         return true;
-      } catch (error) {
-        console.error('Eliminación segura de cliente:', error);
-        alert('No se borró el cliente. ' + (error.message || 'Comprueba la conexión e inténtalo nuevamente.'));
-        try { await cargarCobros(); } catch (e) { console.error(e); }
-        return false;
-      }
+      }catch(error){alert('No se eliminó: '+(error.message||'No se pudo confirmar la operación.'));await cargarCobros();return false;}
     }
 
     function renderCobros() { dibujarCobros(); }
     function dibujarCobros() {
-      var lista = cacheCobros.slice();
+      var lista = cacheCobros.filter(function(v){return !!v.archivado===raietMostrarArchivados.clientes && v.tipo_registro===raietFiltroTipos.clientes;});
       var q = (document.getElementById('buscar-cobros').value || '').toLowerCase().trim();
       var filtroMes = document.getElementById('filtro-cobros').value;
 
@@ -1713,7 +1803,7 @@
       });
 
       var cont = document.getElementById('lista-cobros');
-      if (!lista.length) { cont.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:20px;">No hay clientes registrados.</p>'; return; }
+      if (!lista.length) { cont.innerHTML = raietBarraArchivo('clientes','dibujarCobros')+'<p style="color:var(--text-muted); text-align:center; padding:20px;">No hay cuentas en esta sección.</p>'; return; }
 
       var totalGeneral = lista.reduce(function(acum, v) {
         var d = (v.cobros_cargos || []).reduce(function(s, c) { return s + (Number(c.monto) || 0); }, 0);
@@ -1721,7 +1811,7 @@
         return acum + Math.max(0, d - a);
       }, 0);
 
-      var html = '<div style="background:rgba(56, 189, 248, 0.1); border:1px solid rgba(56, 189, 248, 0.35); border-radius:10px; padding:14px; margin-bottom:16px; text-align:center;">' +
+      var html = raietBarraArchivo('clientes','dibujarCobros')+'<div style="background:rgba(56, 189, 248, 0.1); border:1px solid rgba(56, 189, 248, 0.35); border-radius:10px; padding:14px; margin-bottom:16px; text-align:center;">' +
         '<span style="font-size:0.75rem; color:var(--matte-steel); text-transform:uppercase; font-weight:800; letter-spacing:0.05em;">TOTAL GENERAL POR COBRAR:</span>' +
         '<div style="font-size:1.45rem; font-weight:800; color:var(--accent); margin-top:2px;">$' + totalGeneral.toFixed(2) + '</div>' +
       '</div>';
@@ -1740,7 +1830,8 @@
         var saldoTxt = aFavor > 0.001 ? '<b style="color:var(--accent);">+$' + aFavor.toFixed(2) + ' (A FAVOR)</b>' : (liquidado ? '<b style="color:var(--success);">$0.00</b>' : '<b style="color:var(--danger);">$' + saldo.toFixed(2) + '</b>');
         var badgeTxt = aFavor > 0.001 ? '<span class="badge" style="background:rgba(56,189,248,0.18); color:var(--accent); border:1px solid rgba(56,189,248,0.4);">A Favor</span>' : (liquidado ? '<span class="badge badge-done">Al Día</span>' : '<span class="badge badge-pending">Deuda</span>');
 
-        html += '<div class="acc-card">' +
+        html += '<div class="acc-card'+(v.archivado?' raiet-archivado':'')+'">' +
+          '<div style="padding:8px 12px;text-align:right">'+(v.tipo_registro==='sin_clasificar'?'<button class="btn btn-secondary" onclick="raietClasificarAntiguo(\'clientes\',\''+v.id+'\',\'real\')">Es real</button><button class="btn btn-secondary" onclick="raietClasificarAntiguo(\'clientes\',\''+v.id+'\',\'ficticio\')">Es prueba</button>':'')+'<button class="btn btn-secondary" onclick="raietArchivar(\'clientes\',\''+v.id+'\','+(!v.archivado)+')">'+(v.archivado?'↩ Restaurar':'📦 Archivar')+'</button></div>' +
           '<div class="acc-header" onclick="toggleCobro(\'' + v.id + '\')">' +
             '<div><div class="acc-title">' + v.nombre + '</div>' +
             '<div class="acc-sub">' + (v.telefono ? '📞 ' + v.telefono : 'Cuenta') + ' • Saldo: ' + saldoTxt + '</div></div>' +
@@ -1913,6 +2004,7 @@
     }
 
     async function guardarCuentaPorPagar() {
+      var tipoRegistro=document.getElementById('pago-tipo')?.value||'real';
       var nombre = document.getElementById('pago-concepto').value.trim();
       var detalle = document.getElementById('pago-detalle').value.trim() || 'Insumos';
       var numFact = document.getElementById('pago-num').value.trim();
@@ -1939,7 +2031,7 @@
         };
 
         var nuevoAcreedor = {
-          id: idAcr, nombre: nombre, detalle: detalle,
+          id: idAcr, nombre: nombre, detalle: detalle, tipo_registro:tipoRegistro,
           pagos_cargos: [nuevoCargo],
           pagos_abonos: []
         };
@@ -1977,7 +2069,7 @@
 
         if (navigator.onLine && db) {
           try {
-            var a = await db.from('acreedores').insert({ nombre: nombre, detalle: detalle }).select().single();
+            var a = await db.from('acreedores').insert({ nombre: nombre, detalle: detalle, tipo_registro:tipoRegistro }).select().single();
             if (a.data) {
               nuevoAcreedor.id = a.data.id;
               var pc = await db.from('pagos_cargos').insert({
@@ -2220,18 +2312,22 @@
     }
 
     async function borrarAcreedor(id) {
-      if (!confirm('¿Eliminar cuenta completa?')) return;
-      cachePagos = cachePagos.filter(function(p) { return String(p.id) !== String(id); });
-      cacheCompromisos = cacheCompromisos.filter(function(cp) { return String(cp.acreedor_id) !== String(id); });
-      guardarMemoriaLocal(); dibujarPagos();
-      if (navigator.onLine && db && !String(id).startsWith('loc_')) {
-        try { await db.from('acreedores').delete().eq('id', id); } catch(e){}
-      }
+      var item=cachePagos.find(x=>String(x.id)===String(id));
+      if(!item||item.tipo_registro!=='ficticio'){alert('Solo los proveedores ficticios se pueden eliminar. Archiva los reales.');return;}
+      if(!navigator.onLine||!db){alert('Conéctate para eliminar.');return;}
+      if(!await window.raietConfirmar('¿Eliminar definitivamente esta cuenta ficticia y todos sus pagos, cobros y compromisos?'))return;
+      try{
+        var r=await db.rpc('raiet_eliminar_registro_ficticio',{p_tipo:'acreedores',p_id:String(id)});
+        if(r.error||!r.data?.ok)throw Error(r.error?.message||r.data?.mensaje||'No se pudo completar.');
+        cachePagos=cachePagos.filter(x=>String(x.id)!==String(id));
+        cacheCompromisos=cacheCompromisos.filter(x=>String(x.acreedor_id)!==String(id));
+        guardarMemoriaLocal();dibujarPagos();alert('Cuenta de prueba eliminada.');
+      }catch(e){alert('No se eliminó: '+e.message);await cargarPagos();}
     }
 
     function renderPagos() { dibujarPagos(); }
     function dibujarPagos() {
-      var lista = cachePagos.slice();
+      var lista = cachePagos.filter(function(p){return !!p.archivado===raietMostrarArchivados.acreedores && p.tipo_registro===raietFiltroTipos.acreedores;});
       var q = (document.getElementById('buscar-pagos').value || '').toLowerCase().trim();
       var filtroMes = document.getElementById('filtro-pagos').value;
 
@@ -2239,7 +2335,7 @@
       if (filtroMes) lista = lista.filter(function(p) { return (p.pagos_cargos || []).some(function(c) { return c.fecha && c.fecha.startsWith(filtroMes); }); });
 
       var cont = document.getElementById('lista-pagos');
-      if (!lista.length) { cont.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:20px;">No hay cuentas registradas.</p>'; return; }
+      if (!lista.length) { cont.innerHTML = raietBarraArchivo('acreedores','dibujarPagos')+'<p style="color:var(--text-muted); text-align:center; padding:20px;">No hay cuentas en esta sección.</p>'; return; }
 
       var totalGeneral = lista.reduce(function(acum, p) {
         var d = (p.pagos_cargos || []).reduce(function(s, c) { return s + (Number(c.monto) || 0); }, 0);
@@ -2247,7 +2343,7 @@
         return acum + Math.max(0, d - a);
       }, 0);
 
-      var html = '<div style="background:rgba(239, 68, 68, 0.1); border:1px solid rgba(239, 68, 68, 0.35); border-radius:10px; padding:14px; margin-bottom:16px; text-align:center;">' +
+      var html = raietBarraArchivo('acreedores','dibujarPagos')+'<div style="background:rgba(239, 68, 68, 0.1); border:1px solid rgba(239, 68, 68, 0.35); border-radius:10px; padding:14px; margin-bottom:16px; text-align:center;">' +
         '<span style="font-size:0.75rem; color:var(--matte-steel); text-transform:uppercase; font-weight:800; letter-spacing:0.05em;">TOTAL GENERAL POR PAGAR:</span>' +
         '<div style="font-size:1.45rem; font-weight:800; color:#f87171; margin-top:2px;">$' + totalGeneral.toFixed(2) + '</div>' +
       '</div>';
@@ -2266,7 +2362,8 @@
         var saldoTxt = aFavor > 0.001 ? '<b style="color:var(--accent);">+$' + aFavor.toFixed(2) + ' (A FAVOR)</b>' : (cancelado ? '<b style="color:var(--success);">$0.00</b>' : '<b style="color:var(--danger);">$' + saldo.toFixed(2) + '</b>');
         var badgeTxt = aFavor > 0.001 ? '<span class="badge" style="background:rgba(56,189,248,0.18); color:var(--accent); border:1px solid rgba(56,189,248,0.4);">A Favor</span>' : (cancelado ? '<span class="badge badge-done">Cancelado</span>' : '<span class="badge badge-pending">Por Pagar</span>');
 
-        html += '<div class="acc-card card-pago">' +
+        html += '<div class="acc-card card-pago'+(p.archivado?' raiet-archivado':'')+'">' +
+          '<div style="padding:8px 12px;text-align:right">'+(p.tipo_registro==='sin_clasificar'?'<button class="btn btn-secondary" onclick="raietClasificarAntiguo(\'acreedores\',\''+p.id+'\',\'real\')">Es real</button><button class="btn btn-secondary" onclick="raietClasificarAntiguo(\'acreedores\',\''+p.id+'\',\'ficticio\')">Es prueba</button>':'')+'<button class="btn btn-secondary" onclick="raietArchivar(\'acreedores\',\''+p.id+'\','+(!p.archivado)+')">'+(p.archivado?'↩ Restaurar':'📦 Archivar')+'</button></div>' +
           '<div class="acc-header" onclick="togglePago(\'' + p.id + '\')">' +
             '<div><div class="acc-title">' + p.nombre + '</div>' +
             '<div class="acc-sub">' + (p.detalle || 'Registrado') + ' • Saldo: ' + saldoTxt + '</div></div>' +
@@ -2764,6 +2861,8 @@
   }
   window.esabasSeleccionarClienteCobro=seleccionarClienteCobro;
   window.esabasAsuntoPertenece=(clienteId,asuntoId) => state.asuntos.some(a=>idIgual(a.id,asuntoId) && idIgual(a.cliente_id,clienteId));
+  let mostrarClientesArchivados=false;
+  let filtroTipoClientes="real";
   function dibujarLista() {
     const destino=el('esabas-lista-clientes');if(!destino)return;
     const fichaActiva=state.clienteId!=null && state.clientes.some(c=>idIgual(c.id,state.clienteId));
@@ -2772,16 +2871,18 @@
     if(buscador)buscador.hidden=fichaActiva;
     if(fichaActiva){destino.innerHTML='';return;}
     const q=(buscador?.value||'').trim().toLowerCase();
-    let lista=state.clientes.filter(c=>{
+    let lista=state.clientes.filter(c=>!!c.archivado===mostrarClientesArchivados && c.tipo_registro===filtroTipoClientes).filter(c=>{
       let asuntos=state.asuntos.filter(a=>idIgual(a.cliente_id,c.id));
       return [c.nombre,c.telefono,c.email,c.direccion,...asuntos.flatMap(a=>[a.titulo,a.numero_proceso,a.servicio])].join(' ').toLowerCase().includes(q);
     }).sort((a,b)=>String(a.nombre||'').localeCompare(String(b.nombre||''),'es'));
-    destino.innerHTML=lista.length?lista.map(c=>{
+    destino.innerHTML='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><label style="color:#cbd5e1">Registros <select id="esabas-filtro-tipo" style="background:#111827;color:white;padding:7px"><option value="real" '+(filtroTipoClientes==="real"?"selected":"")+'>Reales</option><option value="ficticio" '+(filtroTipoClientes==="ficticio"?"selected":"")+'>Ficticios / pruebas</option><option value="sin_clasificar" '+(filtroTipoClientes==="sin_clasificar"?"selected":"")+'>Antiguos sin clasificar</option></select></label><label style="display:flex;gap:8px;align-items:center;margin:10px 0;color:#cbd5e1"><input type="checkbox" id="esabas-ver-archivados" '+(mostrarClientesArchivados?'checked':'')+'> Ver archivados</label></div>'+(lista.length?lista.map(c=>{
       const n=state.asuntos.filter(a=>idIgual(a.cliente_id,c.id)).length;
       return `<div class="esabas-linea ${idIgual(state.clienteId,c.id)?'seleccionada':''}">
-        <b>${esc(c.nombre)}</b><div class="esabas-mini">${esc(c.telefono || c.email || 'Sin contacto')} · ${n} asunto(s)</div>
+        <b>${esc(c.nombre)}</b><div class="esabas-mini">${esc(c.telefono || c.email || 'Sin contacto')} · ${n} asunto(s) · ${c.tipo_registro==='ficticio'?'PRUEBA':c.tipo_registro==='real'?'REAL':'SIN CLASIFICAR'}</div>
         <div class="esabas-tools"><button class="btn btn-secondary" type="button" data-legal="ver-cliente" data-id="${esc(c.id)}">Abrir ficha</button></div></div>`;
-    }).join(''):'<p class="esabas-mini" style="padding:12px">Sin clientes coincidentes. Puedes registrar uno desde «+ Cliente».</p>';
+    }).join(''):'<p class="esabas-mini" style="padding:12px">Sin clientes en esta sección.</p>');
+    el('esabas-ver-archivados')?.addEventListener('change',e=>{mostrarClientesArchivados=e.target.checked;dibujarLista();});
+    el('esabas-filtro-tipo')?.addEventListener('change',e=>{filtroTipoClientes=e.target.value;dibujarLista();});
   }
   function input(name,label,value='',type='text') {
     return `<label>${esc(label)}<input name="${esc(name)}" type="${esc(type)}" value="${esc(value)}"></label>`;
@@ -2791,6 +2892,7 @@
     d.innerHTML=`<form id="esabas-cliente-form" class="esabas-form">
     <h3 style="margin:0">${c?'Actualizar ficha':'Registrar cliente'}</h3>
     ${input('nombre','Nombre completo *',c?.nombre||'')}
+    ${c?'<p class="esabas-mini">Tipo de registro: <b>'+esc(c.tipo_registro||'sin_clasificar')+'</b> (no modificable)</p>':'<label>Tipo de registro<select name="tipo_registro"><option value="real" selected>Real</option><option value="ficticio">Ficticio / Prueba</option></select></label>'}
     <div class="esabas-cols">${input('telefono','Teléfono',c?.telefono||'','tel')}${input('email','Correo',c?.email||'','email')}</div>
     ${input('direccion','Dirección',c?.direccion||'')}
     <label>Observaciones<textarea name="observaciones">${esc(c?.observaciones||'')}</textarea></label>
@@ -2817,8 +2919,11 @@
       <div class="esabas-mini">📞 ${esc(c.telefono||'—')} &nbsp; ✉ ${esc(c.email||'—')}</div>
       <div class="esabas-mini">📍 ${esc(c.direccion||'Sin dirección')}</div>
       ${c.observaciones?`<p class="esabas-mini">${esc(c.observaciones)}</p>`:''}
+      <div class="esabas-mini">Tipo de registro: <b>${esc(c.tipo_registro==='ficticio'?'FICTICIO / PRUEBA':c.tipo_registro==='real'?'REAL':'PENDIENTE DE CLASIFICAR')}</b></div>
+      ${c.tipo_registro==='sin_clasificar'?'<div class="esabas-tools"><button type="button" class="btn btn-secondary" data-legal="clasificar-real">Clasificar como REAL</button><button type="button" class="btn btn-secondary" data-legal="clasificar-ficticio">Clasificar como FICTICIO</button></div>':''}
       <div class="esabas-tools"><button type="button" class="btn btn-secondary" data-legal="editar-cliente">Editar cliente</button>
-      <button type="button" class="btn btn-danger" data-legal="eliminar-cliente">✕ Eliminar cliente</button>
+      <button type="button" class="btn btn-secondary" data-legal="archivar-cliente">${c.archivado?'↩ Restaurar':'📦 Archivar'}</button>
+      ${c.tipo_registro==='ficticio'?'<button type="button" class="btn btn-danger" data-legal="eliminar-cliente">✕ Eliminar prueba</button>':''}
       <button type="button" class="btn btn-primary" data-legal="nuevo-asunto">+ Asunto jurídico</button>
       <button type="button" class="btn btn-secondary" data-legal="ir-cobros">Ver módulo de cobros</button></div>
       <div class="esabas-cols"><div class="esabas-linea"><b>${moneda(r.total)}</b><div class="esabas-mini">Total obligaciones</div></div>
