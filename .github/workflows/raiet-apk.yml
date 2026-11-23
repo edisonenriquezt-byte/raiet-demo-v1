@@ -1,6 +1,6 @@
 
 # Firma permanente: activación inicial tras configurar los cuatro Repository secrets.
-name: Crear APK Android RAIET DEMO V1
+name: Crear APK Android RAIET DEMO PRO
 
 on:
   workflow_dispatch:
@@ -34,7 +34,7 @@ jobs:
   compilar-apk:
     # Un parche exclusivo de la web no crea una APK innecesaria.
     if: ${{ !contains(github.event.head_commit.message, '[web-only]') }}
-    name: Compilar APK RAIET DEMO V1 con huella y actualizaciones
+    name: Compilar APK RAIET DEMO PRO con huella y actualizaciones
     runs-on: ubuntu-24.04
 
     steps:
@@ -132,7 +132,7 @@ jobs:
           cp raiet-inventario.js www/
           cp raiet-historia-clinica.js www/
           cp manifest.json www/
-          cp icon-demo.svg www/
+          test -s icon-512.png && test -s icon-192.png
           cp sw.js www/
           cp icon-192.png www/
           cp icon-512.png www/
@@ -143,7 +143,7 @@ jobs:
           node --check www/raiet-native.js
 
           echo "Verificando componentes instalables..."
-          grep -q 'RAIET DEMO V1' www/index.html
+          grep -q 'RAIET DEMO PRO' www/index.html
           grep -q 'mejoras.js?v=' www/index.html
           grep -q 'edicion-financiera.js?v=' www/index.html
           grep -q 'raiet-historia-clinica.js?v=' www/index.html
@@ -175,7 +175,7 @@ jobs:
           cat > capacitor.config.json <<EOF
           {
             "appId": "$APK_ID",
-            "appName": "RAIET DEMO V1",
+            "appName": "RAIET DEMO PRO",
             "webDir": "www",
             "android": {
               "allowMixedContent": false
@@ -381,7 +381,7 @@ jobs:
           gh release create "$TAG" RAIET-DEMO.apk \
             --repo "$REPO" \
             --target "$GITHUB_SHA" \
-            --title "RAIET DEMO V1 Android · Huella y actualizaciones" \
-            --notes "RAIET DEMO V1 con acceso biométrico protegido por Android Keystore y avisos de nuevas versiones. Las instalaciones firmadas permanentemente usan com.esabas.raiet.demo; las beta sin firma permanente usan com.esabas.raiet.demo.beta." \
+            --title "RAIET DEMO PRO Android · Huella y actualizaciones" \
+            --notes "RAIET DEMO PRO con acceso biométrico protegido por Android Keystore y avisos de nuevas versiones. Las instalaciones firmadas permanentemente usan com.esabas.raiet.demo; las beta sin firma permanente usan com.esabas.raiet.demo.beta." \
             ${RAIET_RELEASE_FLAG}
           echo "DESCARGA_DIRECTA: https://github.com/$REPO/releases/latest/download/RAIET-DEMO.apk"

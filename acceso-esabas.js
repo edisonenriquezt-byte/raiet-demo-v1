@@ -1,6 +1,6 @@
 
 /*
-  RAIET DEMO V1
+  RAIET DEMO PRO
   Acceso privado de administrador
   Primera versión: contraseña y bloqueo automático
 */
@@ -22,7 +22,7 @@
   let actualizacionConsultada = false;
   let autenticacionEnCurso = false;
   const CLAVE_ACTIVIDAD_WEB = "raiet_demo_web_ultima_actividad";
-  const VERSION_WEB = "4";
+  const VERSION_WEB = "5";
   function leerActividadWeb() {
     try { return Number(sessionStorage.getItem(CLAVE_ACTIVIDAD_WEB)) || 0; }
     catch (_) { return 0; }
@@ -223,7 +223,7 @@
 
     acceso.innerHTML = `
       <div class="acceso-tarjeta">
-        <h1>RAIET DEMO V1</h1>
+        <img src="./icon-192.png" alt="RAIET" style="display:block;width:76px;height:76px;border-radius:18px;margin:0 auto 12px;object-fit:contain"><h1>RAIET DEMO PRO</h1>
         <p>Sistema privado de gestión profesional</p>
 
         <form id="raiet-formulario-acceso">
@@ -277,7 +277,7 @@
       const etiquetaVersion=document.createElement("span");
       etiquetaVersion.id="raiet-version-web";
       etiquetaVersion.textContent="WEB · v"+VERSION_WEB;
-      etiquetaVersion.title="Versión web de RAIET DEMO V1";
+      etiquetaVersion.title="Versión web de RAIET DEMO PRO";
       document.body.appendChild(etiquetaVersion);
     }
 
@@ -330,7 +330,7 @@
             password: password,
             accessControl: 1,  // BIOMETRY_CURRENT_SET: exige huella y se invalida al modificar huellas
             authValidityDuration: 0,
-            title: "Activar huella RAIET DEMO V1",
+            title: "Activar huella RAIET DEMO PRO",
             negativeButtonText: "Cancelar"
           });
         }
@@ -387,7 +387,7 @@
           return;
         }
         if (remoto <= instalado) {
-          if (manual) window.alert("RAIET DEMO V1 está actualizado (versión " + info.version + ").");
+          if (manual) window.alert("RAIET DEMO PRO está actualizado (versión " + info.version + ").");
           return;
         }
 
@@ -396,7 +396,7 @@
           aviso = document.createElement("div");
           aviso.id = "raiet-aviso-actualizacion";
           const mensaje = document.createElement("span");
-          mensaje.textContent = "Hay una actualización nueva de RAIET DEMO V1.";
+          mensaje.textContent = "Hay una actualización nueva de RAIET DEMO PRO.";
           const descargar = document.createElement("button");
           descargar.type = "button";
           descargar.textContent = "Descargar actualización";
@@ -494,7 +494,7 @@
         // Android Keystore solo libera el secreto tras la autenticación biométrica.
         const credenciales = await lectorHuella().getSecureCredentials({
           server: SERVIDOR_HUELLA,
-          title: "Entrar a RAIET DEMO V1",
+          title: "Entrar a RAIET DEMO PRO",
           subtitle: "Confirma tu huella",
           negativeButtonText: "Usar contraseña"
         });

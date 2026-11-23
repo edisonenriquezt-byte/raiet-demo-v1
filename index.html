@@ -2,7 +2,7 @@
 <html lang="es" class="raiet-bloqueado">
 <head>
 <script>
-// RAIET DEMO V1 — proteger movimientos: NUNCA simular una respuesta 200.
+// RAIET DEMO PRO — proteger movimientos: NUNCA simular una respuesta 200.
 (function() {
   "use strict";
   const originalFetch = window.fetch.bind(window);
@@ -109,15 +109,15 @@
 </script>  
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>RAIET DEMO V1 | Gestión Integral</title>
+  <title>RAIET DEMO PRO | Gestión Integral</title>
   
   <link rel="manifest" href="./manifest.json">
-  <link rel="icon" type="image/svg+xml" href="./icon-demo.svg">
+  <link rel="icon" type="image/png" href="./icon-192.png">
   <meta name="theme-color" content="#080a10">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="RAIET DEMO V1">
+  <meta name="apple-mobile-web-app-title" content="RAIET DEMO PRO">
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
@@ -128,7 +128,7 @@
   }
 </style>
 <script src="./raiet-native.js"></script>
-<script src="./acceso-esabas.js?v=20261123-demo4"></script>
+<script src="./acceso-esabas.js?v=20261123-demo5"></script>
 <!-- FIN CONTROL DE ACCESO -->
 
   <style>
@@ -164,12 +164,12 @@
     }
     .brand-left { display: flex; align-items: center; gap: 12px; }
     .brand-avatar {
-      width: 44px; height: 38px; border-radius: 10px;
-      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      width: 44px; height: 44px; border-radius: 12px; overflow: hidden;
       display: flex; align-items: center; justify-content: center;
-      font-weight: 900; font-size: 0.82rem; color: #fff; letter-spacing: 0.05em;
       box-shadow: 0 2px 12px rgba(37, 99, 235, 0.45);
+      flex: 0 0 44px;
     }
+    .brand-avatar img {width: 100%; height: 100%; object-fit: contain; display: block;}
     .brand-title-box { display: flex; flex-direction: column; }
     .brand-name { font-size: 1.05rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #fff; }
     .brand-tag { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
@@ -317,9 +317,9 @@
   <div class="container">
     <header class="brand-header">
       <div class="brand-left">
-        <div class="brand-avatar">RE</div>
+        <div class="brand-avatar"><img src="./icon-192.png" alt="Logo RAIET"></div>
         <div class="brand-title-box">
-          <span class="brand-name">RAIET DEMO V1</span>
+          <span class="brand-name">RAIET DEMO PRO</span>
           <span class="brand-tag" id="view-desc">Agenda y Citas</span>
         </div>
       </div>
@@ -704,7 +704,7 @@
         if (teniaControlador) ofrecerActualizacion();
         else teniaControlador = true;
       });
-      navigator.serviceWorker.register('./sw.js?v=20261123-demo4', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=20261123-demo5', { updateViaCache: 'none' })
         .then(function(registro) {
           if (registro.waiting) ofrecerActualizacion();
           function comprobarAlVolver() {
@@ -2629,7 +2629,7 @@
     window.raietArrancar = cargarTodo;
   </script>
   <script>
-/* RAIET DEMO V1 — Módulo de clientes, asuntos y actuaciones
+/* RAIET DEMO PRO — Módulo de clientes, asuntos y actuaciones
  * No contiene contraseñas. Se conecta a Supabase mediante window.db
  * e inicia únicamente tras el inicio de sesión de RAIET.
  */
