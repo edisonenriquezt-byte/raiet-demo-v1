@@ -1,0 +1,60 @@
+name: Preparar sitio RAIET DEMO para Cloudflare Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "index.html"
+      - "activar.html"
+      - "acceso-esabas.js"
+      - "manifest.json"
+      - "sw.js"
+      - "icon-demo.svg"
+      - "raiet-*.js"
+      - "mejoras.js"
+      - "edicion-financiera.js"
+      - "scripts/preparar_web_demo.sh"
+      - ".github/workflows/raiet-demo-web-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  preparar-web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construir sitio web independiente
+        run: sh scripts/preparar_web_demo.sh
+      - name: Verificar archivos y aislamiento
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          test -f dist/activar.html
+          test -f dist/sw.js
+          test -f dist/manifest.json
+          test -f dist/_headers
+          test -f dist/icon-demo.svg
+          for archivo in acceso-esabas.js mejoras.js edicion-financiera.js raiet-interacciones.js raiet-respaldo.js raiet-gestion.js raiet-inventario.js raiet-historia-clinica.js raiet-native.js; do
+            test -s "dist/$archivo"
+          done
+          grep -q 'lhqyibxpstrterlckaax' dist/index.html
+          grep -q 'VERSION_WEB = "4"' dist/acceso-esabas.js
+          if grep -rq 'fwkdtcecdwxezzkphxiv' dist; then
+            echo "Error: una referencia al proyecto privado ESABAS apareció en DEMO." >&2
+            exit 1
+          fi
+          echo "Paquete DEMO validado: origen Cloudflare independiente, Web v4."
+      - name: Empaquetar para carga directa opcional
+        shell: bash
+        run: |
+          (cd dist && zip -q -r ../RAIET-DEMO-WEB-v4.zip .)
+      - name: Guardar sitio listo para Cloudflare Pages
+        uses: actions/upload-artifact@v4
+        with:
+          name: RAIET-DEMO-WEB-v4-Cloudflare
+          path: RAIET-DEMO-WEB-v4.zip
+          if-no-files-found: error
+          retention-days: 30
