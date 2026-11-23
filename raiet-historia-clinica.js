@@ -119,7 +119,7 @@
     ["Alergias",txt(p.alergias)],["Condiciones",txt(p.enfermedades)],["Medicación actual",txt(p.medicacion_actual)]];
    return '<div class="hc-detalles">'+cols.map(c=>'<p><b>'+c[0]+':</b> '+c[1]+'</p>').join("")+'</div>'
      +'<div class="hc-acciones"><button type="button" class="btn btn-secondary" data-hc="archivar" data-id="'+esc(p.id)+'">'
-     +(p.archivado?"Reactivar ficha":"Archivar ficha")+'</button></div>'
+     +(p.archivado?"Reactivar ficha":"Archivar ficha")+'</button>'+(p.tipo_registro==='ficticio'?'<button type="button" class="btn btn-danger" data-hc="eliminar" data-id="'+esc(p.id)+'">Eliminar prueba</button>':'')+'</div>'
      +'<div class="hc-nav">'+Object.keys(nombres).map(k=>'<button type="button" class="'+(st.tab===k?"activo":"")+'" data-hc="tab" data-tipo="'+k+'">'+nombres[k]+'</button>').join("")+'</div>'
      +'<div id="hc-subvista">'+contenidoTab(p)+'</div>';
  }
@@ -226,9 +226,11 @@
      if(r.error)throw r.error;
      mensaje("✓ Ficha actualizada; cambio registrado en auditoría.");
    }else{
+     datos.tipo_registro=f.get("tipo_registro")==="ficticio"?"ficticio":"real";
      const r=await db().from("pacientes").insert(datos).select("id").single();
      if(r.error)throw r.error;
      st.abierto=String(r.data.id);
+     tipoVista=datos.tipo_registro;if($("hc-tipo"))$("hc-tipo").value=tipoVista;
      mensaje("✓ Historia clínica creada.");
    }
    st.editar=null;$("hc-form-wrap").innerHTML=formPaciente(null);
@@ -305,6 +307,26 @@
    await cargarPacientes();
    mensaje(archive?"✓ Ficha archivada sin borrar registros.":"✓ Ficha reactivada.");
  }
+ async function eliminarFichaPrueba(id){
+   await autorizado();
+   const ficha=st.pacientes.find(x=>String(x.id)===String(id));
+   if(!ficha||ficha.tipo_registro!=='ficticio')throw Error('Solo pueden eliminarse fichas ficticias. Puedes archivar las reales.');
+   if(!await window.raietConfirmar('¿Eliminar definitivamente esta historia clínica FICTICIA, junto con sus citas, consultas y archivos?'))return;
+   const respuesta=await db().rpc('raiet_eliminar_paciente_prueba',{p_id:String(id)});
+   if(respuesta.error||!respuesta.data?.ok)throw Error(respuesta.error?.message||respuesta.data?.mensaje||'No se confirmó la eliminación.');
+   st.abierto=null;
+   const archivos=await db().from('raiet_purgas_clinica').select('id,ruta').eq('paciente_id',String(id)).eq('estado','pendiente');
+   let pendientes=0;
+   if(archivos.error){pendientes=Number(respuesta.data.archivos_pendientes||0);}
+   else for(const x of (archivos.data||[])){
+     const rem=await db().storage.from(BUCKET).remove([x.ruta]);
+     if(rem.error){pendientes++;continue;}
+     const marcado=await db().from('raiet_purgas_clinica').update({estado:'completado'}).eq('id',x.id).select('id').single();
+     if(marcado.error)pendientes++;
+   }
+   await cargarPacientes();
+   mensaje(pendientes?'Ficha de prueba eliminada; quedan archivos por limpiar.':'Ficha de prueba eliminada.',pendientes>0);
+ }
  async function abrirArchivo(path){
    await autorizado();
    const archivo=[...(st.registros.documentos||[]),...(st.registros.examenes||[])].find(x=>x.archivo_ruta===path&&String(x.paciente_id)===st.abierto);
@@ -338,6 +360,7 @@
      if(act==="tab"){st.tab=b.dataset.tipo;dibujar();return;}
      st.ocupado=true;b.disabled=true;
      if(act==="archivar")await cambiarArchivo(id);
+     if(act==="eliminar")await eliminarFichaPrueba(id);
      if(act==="archivo")await abrirArchivo(b.dataset.ruta);
      if(act==="realizar")await realizarCita(id);
    }catch(e){mensaje(e.message||"No pudo completarse la acción.",true);}
