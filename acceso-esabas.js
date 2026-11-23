@@ -22,7 +22,7 @@
   let actualizacionConsultada = false;
   let autenticacionEnCurso = false;
   const CLAVE_ACTIVIDAD_WEB = "raiet_demo_web_ultima_actividad";
-  const VERSION_WEB = "8";
+  const VERSION_WEB = "1.9";
   function leerActividadWeb() {
     try { return Number(sessionStorage.getItem(CLAVE_ACTIVIDAD_WEB)) || 0; }
     catch (_) { return 0; }
@@ -372,7 +372,7 @@
           return;
         }
         const res = await fetch(URL_VERSIONES, { cache: "no-store" });
-        if (!res.ok) throw new Error("No se pudo consultar GitHub.");
+        if (!res.ok) throw new Error("No se pudo comprobar si existen actualizaciones.");
         const datos = await res.json();
         const etiqueta = /^raiet-demo-android-(\d+)$/.exec(String(datos.tag_name || ""));
         const remoto = etiqueta ? Number(etiqueta[1]) : 0;
@@ -387,7 +387,7 @@
           return;
         }
         if (remoto <= instalado) {
-          if (manual) window.alert("RAIET DEMO PRO está actualizado (versión " + info.version + ").");
+          if (manual) window.alert("RAIET DEMO PRO está actualizado (versión v" + String(info.version || "1.9").replace(/^v/i, "") + ").");
           return;
         }
 
