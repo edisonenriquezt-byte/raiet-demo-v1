@@ -1,9 +1,9 @@
-const CACHE_NAME = 'raiet-demo-web-v2-20261122';
+const CACHE_NAME = 'raiet-demo-web-v4-20261123';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
-  './acceso-esabas.js?v=20261122-demo2',
+  './acceso-esabas.js?v=20261123-demo4',
   './raiet-native.js',
   './icon-demo.svg',
   './mejoras.js?v=20261122-demo2',
