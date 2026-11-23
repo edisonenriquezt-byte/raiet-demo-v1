@@ -1,12 +1,12 @@
-/* RAIET DEMO V1 · Gestión personal, comercial y profesional (sin duplicar otros módulos). */
+/* RAIET DEMO PRO · Gestión personal, comercial y profesional (sin duplicar otros módulos). */
 (function () {
 "use strict";
-// La autorización se determina según el usuario autenticado en DEMO.
+// La autorización depende del usuario activo en DEMO.
 var T={tarea:"Tarea",oportunidad:"Oportunidad",nota:"Nota",recordatorio:"Recordatorio",compra:"Compra"};
 var A={personal:"Personal",profesional:"Profesional"};
 var E={pendiente:"Pendiente",en_gestion:"En gestión",completado:"Completada",descartado:"Descartada"};
 var F={ninguna:"No repetir",diaria:"Diaria",semanal:"Semanal",mensual:"Mensual"};
-var lista=[],historial=[],editando=null,cargando=false;
+var lista=[],historial=[],editando=null,cargando=false,mostrarArchivados=false,tipoVista="real";
 function $(id){return document.getElementById(id);}
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 function sel(obj,v){return Object.keys(obj).map(function(k){return '<option value="'+k+'" '+(k===v?"selected":"")+'>'+esc(obj[k])+'</option>';}).join("");}
@@ -49,15 +49,19 @@ function vista(){
  '<div class="gm-grid">',
  '<label>Ámbito<select id="gm-ambito" class="gm-input"><option value="">Todos</option>',sel(A),'</select></label>',
  '<label>Tipo<select id="gm-tipo" class="gm-input"><option value="">Todos</option>',sel(T),'</select></label>',
+  '<label>Mostrar<select id="gm-tipo-registro" class="gm-input"><option value="real">Reales</option><option value="ficticio">Ficticios / Pruebas</option><option value="sin_clasificar">Antiguos sin clasificar</option></select></label>',
  '<label>Estado<select id="gm-estado" class="gm-input"><option value="activos">Pendientes y en gestión</option><option value="">Todos</option>',sel(E),'</select></label>',
  '</div><input type="search" id="gm-buscar" class="gm-input" placeholder="Buscar anotaciones, oportunidades, compras…">',
  '<div id="gm-form" hidden></div><div id="gestion-msg" role="status" class="gm-meta"></div>',
- '<div id="gm-resumen" class="gm-meta"></div><div id="gm-lista"></div></div>'
+ '<label style="display:flex;gap:8px;align-items:center"><input id="gm-archivados" type="checkbox"> Ver archivados</label>',
+  '<div id="gm-resumen" class="gm-meta"></div><div id="gm-lista"></div></div>'
  ].join("");
  agenda.parentNode.insertBefore(s,agenda);
  var b=document.createElement("button");b.id="nav-gestion";b.className="nav-btn";b.textContent="🧭 Gestión";b.type="button";
  nav.insertBefore(b,nav.children[1]||null);b.addEventListener("click",function(){abrir();});
  s.addEventListener("click",manejar);s.addEventListener("submit",guardarForm);
+  $("gm-archivados").addEventListener("change",function(e){mostrarArchivados=e.target.checked;dibujar();});
+  $("gm-tipo-registro").addEventListener("change",function(e){tipoVista=e.target.value;dibujar();});
  ["gm-ambito","gm-tipo","gm-estado","gm-buscar"].forEach(function(id){$(id).addEventListener(id==="gm-buscar"?"input":"change",dibujar);});
 }
 function formulario(item){
@@ -65,6 +69,7 @@ function formulario(item){
  var d=$("gm-form");d.hidden=false;
  d.innerHTML=[
  '<form id="gm-edicion" class="gm-card"><h3>',item?"Editar anotación":"Registrar anotación",'</h3>',
+  item?'<p class="gm-meta">Registro '+esc(item.tipo_registro||'sin_clasificar')+' (tipo fijo)</p>':'<label>Tipo de registro<select class="gm-input" name="tipo_registro"><option value="real">Real</option><option value="ficticio">Ficticio / Prueba</option></select></label>',
  '<div class="gm-grid"><label>Ámbito<select class="gm-input" name="ambito">',sel(A,item?.ambito||"personal"),'</select></label>',
  '<label>Tipo<select class="gm-input" name="tipo">',sel(T,item?.tipo||"tarea"),'</select></label></div>',
  '<label>Título / actividad *<input required maxlength="220" name="titulo" class="gm-input" value="',esc(item?.titulo||""),'" placeholder="Ej.: Comprar frutas, llamar, enviar propuesta"></label>',
@@ -100,8 +105,8 @@ async function cargar(){
 function dibujar(){
  var destino=$("gm-lista");if(!destino)return;
  var amb=$("gm-ambito").value,tipo=$("gm-tipo").value,est=$("gm-estado").value,bus=$("gm-buscar").value.toLowerCase().trim();
- var visibles=lista.filter(function(x){return (!amb||x.ambito===amb)&&(!tipo||x.tipo===tipo)&&(!est||(est==="activos"?["pendiente","en_gestion"].includes(x.estado):x.estado===est))&&(!bus||[x.titulo,x.detalle,x.contacto,x.proxima_accion].join(" ").toLowerCase().includes(bus));});
- $("gm-resumen").textContent=visibles.length+" visibles · "+lista.filter(x=>["pendiente","en_gestion"].includes(x.estado)).length+" pendientes/en gestión · "+lista.filter(x=>x.tipo==="oportunidad"&&x.estado!=="descartado").length+" oportunidades";
+ var visibles=lista.filter(function(x){return (!!x.archivado===mostrarArchivados)&&x.tipo_registro===tipoVista&&(!amb||x.ambito===amb)&&(!tipo||x.tipo===tipo)&&(!est||(est==="activos"?["pendiente","en_gestion"].includes(x.estado):x.estado===est))&&(!bus||[x.titulo,x.detalle,x.contacto,x.proxima_accion].join(" ").toLowerCase().includes(bus));});
+ $("gm-resumen").textContent=visibles.length+" visibles · "+lista.filter(x=>!x.archivado&&x.tipo_registro==="real"&&["pendiente","en_gestion"].includes(x.estado)).length+" pendientes/en gestión · "+lista.filter(x=>!x.archivado&&x.tipo_registro==="real"&&x.tipo==="oportunidad"&&x.estado!=="descartado").length+" oportunidades";
  destino.innerHTML=visibles.length?visibles.map(function(x){
   var hist=historial.filter(z=>z.gestion_id===x.id),vigente=["pendiente","en_gestion"].includes(x.estado);
   return [
@@ -110,10 +115,12 @@ function dibujar(){
    x.detalle?'<p class="gm-meta">📝 '+esc(x.detalle)+'</p>':"",
    x.contacto?'<p class="gm-meta">👤 '+esc(x.contacto)+'</p>':"",
    x.proxima_accion?'<p class="gm-meta">➜ '+esc(x.proxima_accion)+'</p>':"",
-   '<div class="gm-tools">',boton("Editar","editar",x.id),
-   vigente?boton("✓ Realizada","hecho",x.id):"",
-   boton("+ Gestión realizada","anotar",x.id),boton("Historial ("+hist.length+")","historial",x.id),
-   boton("Eliminar","eliminar",x.id),'</div>',
+   '<div class="gm-tools">',x.archivado?"":boton("Editar","editar",x.id),
+   vigente&&!x.archivado?boton("✓ Realizada","hecho",x.id):"",
+   x.archivado?"":boton("+ Gestión realizada","anotar",x.id),boton("Historial ("+hist.length+")","historial",x.id),
+   boton(x.archivado?"↩ Restaurar":"📦 Archivar","archivar",x.id),
+   x.tipo_registro==="sin_clasificar"?boton("Es real","clasificar-real",x.id)+boton("Es prueba","clasificar-ficticio",x.id):"",
+   x.tipo_registro==="ficticio"?boton("Eliminar prueba","eliminar",x.id):"",'</div>',
    '<div id="gm-h-',esc(x.id),'" class="gm-meta" hidden>',
    hist.slice(0,25).map(z=>'<div style="border-top:1px solid #334155;padding:7px 0">'+esc(new Date(z.creado_el).toLocaleString("es-EC",{timeZone:"America/Guayaquil"}))+" · "+esc(z.accion)+" · "+esc(z.detalle)+'</div>').join("")||"Sin historial",
    '</div><div id="gm-n-',esc(x.id),'" hidden></div></article>'
@@ -133,9 +140,11 @@ async function guardarForm(e){
      proxima_accion:String(f.get("proxima_accion")||"").trim(),estado:f.get("estado"),prioridad:f.get("prioridad"),
      frecuencia:f.get("frecuencia"),fecha:iso(f.get("fecha")),fecha_alarma:iso(f.get("fecha_alarma"))};
    if(!payload.titulo)throw Error("Escribe un título.");
+   if(!editando)payload.tipo_registro=f.get("tipo_registro")==="ficticio"?"ficticio":"real";
    var q=editando?window.db.from("gestion_items").update(payload).eq("id",editando).eq("propietario",user.id):window.db.from("gestion_items").insert(payload);
    var result=await q.select("id").single();
    if(result.error)throw result.error;
+   if(!editando){tipoVista=payload.tipo_registro;$("gm-tipo-registro").value=tipoVista;}
    editando=null;$("gm-form").hidden=true;await cargar();
    if(typeof window.cargarAgenda==="function")window.cargarAgenda();
    nota("✓ Registro guardado. Agenda sincronizada si tiene fecha.");
@@ -156,19 +165,46 @@ async function guardarForm(e){
   finally{bt.disabled=false;}
  }
 }
+async function archivar(id){
+ var x=lista.find(v=>v.id===id);if(!x)return;
+ var nuevo=!x.archivado;
+ if(!confirm(nuevo?"¿Archivar? Se conservarán las gestiones y su historial.":"¿Restaurar este registro?"))return;
+ try{
+  var u=await auth();
+  var r=await window.db.from("gestion_items").update({archivado:nuevo}).eq("id",id).eq("propietario",u.id).select("id,archivado").single();
+  if(r.error||r.data?.archivado!==nuevo)throw Error(r.error?.message||"No se confirmó la operación.");
+  mostrarArchivados=nuevo;$("gm-archivados").checked=nuevo;
+  await cargar();nota(nuevo?"✓ Registro archivado.":"✓ Registro restaurado.");
+ }catch(e){nota("No se modificó: "+(e.message||"error"),true);}
+}
 async function cambiar(id,accion){
  var x=lista.find(v=>v.id===id);if(!x)return;
- var confirmacion=accion==="hecho"?"¿Registrar esta actividad como realizada?"+(x.frecuencia!=="ninguna"?" Se programará su próxima repetición.":""):"¿Eliminar definitivamente este registro y su historial?";
- if(!confirm(confirmacion))return;
+ if(accion==="eliminar"&&x.tipo_registro!=="ficticio")return nota("Solo se eliminan pruebas. Archiva los registros reales.",true);
+ if(!(accion==="hecho"?confirm("¿Registrar esta actividad como realizada?"):await window.raietConfirmar("¿Eliminar definitivamente este registro FICTICIO, su historial y sus citas de prueba?")))return;
  try{
-  var u=await auth(),q=accion==="hecho"
-   ?window.db.from("gestion_items").update({estado:"completado"}).eq("id",id).eq("propietario",u.id)
-   :window.db.from("gestion_items").delete().eq("id",id).eq("propietario",u.id);
-  var r=await q.select("id").single();if(r.error)throw r.error;
+  var u=await auth();
+  if(accion==="hecho"){
+   var res=await window.db.from("gestion_items").update({estado:"completado"}).eq("id",id).eq("propietario",u.id).select("id").single();
+   if(res.error)throw res.error;
+  }else{
+   var res=await window.db.rpc("raiet_eliminar_registro_ficticio",{p_tipo:"gestion_items",p_id:id});
+   if(res.error||!res.data?.ok)throw Error(res.error?.message||res.data?.mensaje||"No se confirmó la eliminación.");
+  }
   await cargar();if(typeof window.cargarAgenda==="function")window.cargarAgenda();
   nota("✓ Cambio confirmado.");
  }catch(e){nota("Operación no confirmada: "+(e?.message||"error"),true);}
 }
+async function clasificarGestion(id,tipo){
+ var x=lista.find(v=>v.id===id);if(!x||x.tipo_registro!=="sin_clasificar")return;
+ if(!confirm("¿Clasificar esta gestión antigua como "+(tipo==="real"?"REAL":"FICTICIA")+"? No podrás modificarlo después."))return;
+ try{
+  await auth();
+  var r=await window.db.rpc("raiet_clasificar_registro_antiguo",{p_tabla:"gestion_items",p_id:id,p_tipo:tipo});
+  if(r.error||!r.data?.ok)throw Error(r.error?.message||r.data?.mensaje||"No se confirmó.");
+  tipoVista=tipo;$("gm-tipo-registro").value=tipo;await cargar();
+ }catch(e){nota("No se clasificó: "+(e?.message||"error"),true);}
+}
+
 function abrir(id){
  var btn=$("nav-gestion");
  if(typeof window.cambiarPestana==="function")window.cambiarPestana("gestion",btn);
@@ -190,6 +226,8 @@ function manejar(e){
  else if(t==="actualizar")void cargar();
  else if(t==="editar")formulario(lista.find(x=>x.id===id));
  else if(t==="hecho"||t==="eliminar")void cambiar(id,t);
+ else if(t==="archivar")void archivar(id);
+ else if(t==="clasificar-real"||t==="clasificar-ficticio")void clasificarGestion(id,t==="clasificar-real"?"real":"ficticio");
  else if(t==="historial"){$("gm-h-"+id).hidden=!$("gm-h-"+id).hidden;}
  else if(t==="anotar"){
   var box=$("gm-n-"+id);box.hidden=false;
