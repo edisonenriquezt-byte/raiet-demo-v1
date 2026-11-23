@@ -128,7 +128,7 @@
   }
 </style>
 <script src="./raiet-native.js"></script>
-<script src="./acceso-esabas.js?v=20261123-demo5"></script>
+<script src="./acceso-esabas.js?v=20261123-demo6"></script>
 <!-- FIN CONTROL DE ACCESO -->
 
   <style>
@@ -704,7 +704,7 @@
         if (teniaControlador) ofrecerActualizacion();
         else teniaControlador = true;
       });
-      navigator.serviceWorker.register('./sw.js?v=20261123-demo5', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=20261123-demo6', { updateViaCache: 'none' })
         .then(function(registro) {
           if (registro.waiting) ofrecerActualizacion();
           function comprobarAlVolver() {
