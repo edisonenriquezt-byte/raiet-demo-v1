@@ -1,8 +1,9 @@
 /* RAIET · Inventario PEPS y CPP ponderado sobre existencias. */
 (function(){
 "use strict";
-// Usuario autorizado mediante Supabase DEMO.
+// Autorización exclusiva del proyecto DEMO.
 const $=id=>document.getElementById(id);
+let tipoVista="real";
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const precio=v=>"$"+Number(v||0).toFixed(2);
 let ocupada=false;
@@ -81,7 +82,7 @@ function actualizarOpcionesInventario(){
  for(const tipo of ["compra","venta"]){
   const el=$("inv-operativo-producto-"+tipo);if(!el)continue;
   const anterior=el.value;
-  const productos=(window.cacheInv||[]).filter(p=>p.activo!==false);
+  const productos=(window.cacheInv||[]).filter(p=>p.activo!==false&&p.tipo_registro===tipoVista);
   el.innerHTML='<option value="">— Selecciona un producto —</option>'+
    productos.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.codigo)+' · '+esc(p.nombre)+
    ' (stock '+esc(p.stock)+')</option>').join("");
@@ -91,7 +92,7 @@ function actualizarOpcionesInventario(){
 function renderTransaccionesInventario(){
  const cont=$("inv-operativo-transacciones");if(!cont)return;
  const items=[];
- for(const p of window.cacheInv||[]){
+ for(const p of (window.cacheInv||[]).filter(p=>p.tipo_registro===tipoVista)){
   for(const m of p.inventario_movimientos||[])items.push({p,m});
  }
  items.sort((a,b)=>Number(b.m.orden_fifo||0)-Number(a.m.orden_fifo||0));
@@ -139,7 +140,7 @@ function montaje(){
  '<p style="margin:6px 0 0;line-height:1.55;font-size:13px;color:#cbd5e1"><b>Mayorista: costo +15 %</b> · <b>Unidad: costo +35 %</b>. Son porcentajes ilustrativos, ajustables según las necesidades y políticas comerciales de cada cliente.</p></div>'+
  '<div id="inv-raiet-mensaje" role="status" style="font-size:12px;margin:10px 0;white-space:pre-wrap"></div>'+
  '<div class="card" id="inv-raiet-formulario" hidden></div>'+
- '<label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#94a3b8;margin:12px 0"><input type="checkbox" id="inv-raiet-archivados"> Mostrar archivados</label>';
+ '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label style="color:#cbd5e1">Mostrar <select id="inv-raiet-tipo" style="background:#111827;color:white;padding:7px"><option value="real">Reales</option><option value="ficticio">Ficticios / pruebas</option><option value="sin_clasificar">Antiguos sin clasificar</option></select></label><label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#94a3b8;margin:12px 0"><input type="checkbox" id="inv-raiet-archivados"> Mostrar archivados</label></div>';
  const lista=$("lista-inventario");
  if(lista)lista.parentNode.insertBefore(div,lista);else seccion.appendChild(div);
  const css=document.createElement("style");
@@ -148,6 +149,7 @@ function montaje(){
  seccion.addEventListener("click",clicks);
  seccion.addEventListener("submit",submit);
  $("inv-raiet-archivados").addEventListener("change",()=>window.dibujarInventario());
+ $("inv-raiet-tipo").addEventListener("change",e=>{tipoVista=e.target.value;window.dibujarInventario();});
  navegacionOperativa();
 }
 async function foto(campo){
@@ -194,13 +196,13 @@ window.dibujarInventario=function(){
  const cont=$("lista-inventario");if(!cont)return;
  const q=($("buscar-inv")?.value||"").toLowerCase().trim();
  const archivados=!!$("inv-raiet-archivados")?.checked;
- const prods=(window.cacheInv||[]).filter(p=>(archivados||p.activo!==false)&&
+ const prods=(window.cacheInv||[]).filter(p=>p.tipo_registro===tipoVista&&(archivados||p.activo!==false)&&
   (!q||String(p.codigo).toLowerCase().includes(q)||String(p.nombre).toLowerCase().includes(q)));
  if(!prods.length){cont.innerHTML='<div class="card">No hay productos para mostrar.</div>';return;}
  cont.innerHTML=prods.map(p=>{
   const open=(window.invAbiertos||[]).includes(String(p.id)),sinStock=Number(p.stock)<=0,arch=p.activo===false;
   return '<div class="acc-card card-inv"><div class="acc-header" data-inv-r="toggle" data-id="'+esc(p.id)+'">'+
-   '<div><div class="acc-title">'+esc(p.codigo)+' · '+esc(p.nombre)+(arch?" (archivado)":"")+'</div>'+
+   '<div><div class="acc-title">'+esc(p.codigo)+' · '+esc(p.nombre)+(arch?" (archivado)":"")+(p.tipo_registro==='ficticio'?' · PRUEBA':'')+'</div>'+
    '<div class="acc-sub">Stock: <b>'+esc(p.stock)+'</b> unds · CPP restante: <b>'+precio(p.costo_promedio)+'</b></div></div>'+
    '<span class="badge '+(sinStock?"badge-mora":"badge-done")+'">'+(arch?"Archivado":sinStock?"Agotado":"En stock")+'</span>'+
    '<span>'+ (open?"▲":"▼")+'</span></div>'+
@@ -214,6 +216,8 @@ window.dibujarInventario=function(){
     '<button type="button" class="btn btn-primary" data-inv-r="compra" data-id="'+esc(p.id)+'">＋ Compra</button>'+
     '<button type="button" class="btn btn-secondary" data-inv-r="venta" data-id="'+esc(p.id)+'">− Venta</button>'+
     '<button type="button" class="btn btn-secondary" data-inv-r="archivar" data-id="'+esc(p.id)+'">Archivar</button>')+
+     (p.tipo_registro==='sin_clasificar'?'<button type="button" class="btn btn-secondary" data-inv-r="clasificar-real" data-id="'+esc(p.id)+'">Es real</button><button type="button" class="btn btn-secondary" data-inv-r="clasificar-ficticio" data-id="'+esc(p.id)+'">Es prueba</button>':'')+
+     (p.tipo_registro==='ficticio'?'<button type="button" class="btn btn-danger" data-inv-r="eliminar" data-id="'+esc(p.id)+'">Eliminar prueba</button>':'')+
    '</div><div class="ledger-section"><div class="ledger-title">📒 Kardex · '+(p.inventario_movimientos||[]).length+' registros</div>'+
     tarjetaMovimientos(p)+'</div></div></div>';
  }).join("");
@@ -244,7 +248,9 @@ window.guardarProductoInventario=async function(){
  try{
   await seguridad();
   const f=await foto($("inv-foto"));
-  await escribir("raiet_inventario_crear_producto",{p_codigo:codigo,p_nombre:nombre,p_cantidad:cantidad,p_costo:costo,p_foto:f});
+  const tipoRegistro=$("inv-tipo")?.value==="ficticio"?"ficticio":"real";
+  await escribir("raiet_inventario_crear_producto_clasificado",{p_codigo:codigo,p_nombre:nombre,p_cantidad:cantidad,p_costo:costo,p_foto:f,p_tipo:tipoRegistro});
+  tipoVista=tipoRegistro;if($("inv-raiet-tipo"))$("inv-raiet-tipo").value=tipoRegistro;
   ["inv-codigo","inv-nombre","inv-stock","inv-costo","inv-foto"].forEach(id=>{if($(id))$(id).value="";});
   mensaje("✓ Producto creado y stock inicial registrado en Kardex.");
  }catch(e){mensaje("No se guardó el producto: "+(e?.message||"error"),true);alert("No se guardó el producto: "+(e?.message||"error"));}
@@ -309,7 +315,28 @@ async function archivar(id,arch){
  try{await escribir("raiet_inventario_archivar",{p_producto:id,p_archivar:arch});mensaje(arch?"✓ Producto archivado.":"✓ Producto reactivado.");}
  catch(e){mensaje("No se pudo cambiar el estado: "+(e?.message||"error"),true);}
 }
-window.borrarProducto=function(id){void archivar(id,true);};
+async function eliminarVacio(id){
+ try{
+  await seguridad();
+  const p=(window.cacheInv||[]).find(x=>String(x.id)===String(id));
+  if(!p||p.tipo_registro!=='ficticio')throw Error('Solo se eliminan productos de prueba.');
+  if(!await window.raietConfirmar('¿Eliminar definitivamente este producto FICTICIO, su stock y todos sus movimientos?'))return;
+  const r=await window.db.rpc('raiet_eliminar_registro_ficticio',{p_tipo:'inventario_productos',p_id:String(id)});
+  if(r.error||!r.data?.ok)throw Error(r.error?.message||r.data?.mensaje||'No se confirmó la eliminación.');
+  await window.cargarInventario();mensaje('✓ Producto ficticio eliminado.');
+ }catch(e){mensaje('No se eliminó: '+(e.message||'error'),true);}
+}
+async function clasificarProducto(id,tipo){
+ try{
+  await seguridad();
+  if(!confirm('¿Confirmas que este producto antiguo es '+(tipo==='ficticio'?'FICTICIO':'REAL')+'? No podrá reclasificarse.'))return;
+  const r=await window.db.rpc('raiet_clasificar_registro_antiguo',{p_tabla:'inventario_productos',p_id:String(id),p_tipo:tipo});
+  if(r.error||!r.data?.ok)throw Error(r.error?.message||r.data?.mensaje||'No se confirmó.');
+  tipoVista=tipo;$('inv-raiet-tipo').value=tipo;await window.cargarInventario();
+ }catch(e){mensaje('No se clasificó: '+(e.message||'error'),true);}
+}
+
+window.borrarProducto=function(id){void eliminarVacio(id);};
 window.borrarMovimientoInventario=function(id,mov){void anular(mov);};
 function clicks(e){
  const b=e.target?.closest?.("[data-inv-r]");if(!b)return;
@@ -333,6 +360,8 @@ function clicks(e){
  else if(a==="cancelar")panelCerrar();
  else if(a==="anular")void anular(b.dataset.mov);
  else if(a==="archivar"||a==="reactivar")void archivar(id,a==="archivar");
+ else if(a==="eliminar")void eliminarVacio(id);
+ else if(a==="clasificar-real"||a==="clasificar-ficticio")void clasificarProducto(id,a==="clasificar-real"?"real":"ficticio");
  else if(a==="foto-producto"){
   const p=(window.cacheInv||[]).find(x=>String(x.id)===String(id));
   if(p?.foto_url&&window.abrirVisor)window.abrirVisor(p.foto_url);
