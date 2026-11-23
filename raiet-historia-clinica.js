@@ -12,6 +12,7 @@
  const tablas={evoluciones:"pacientes_evoluciones",recetas:"pacientes_recetas",examenes:"pacientes_examenes",documentos:"pacientes_documentos",citas:"pacientes_citas",historial:"pacientes_historial"};
  const st={pacientes:[],paciente:null,registros:{},abierto:null,tab:"evoluciones",archivo:false,editar:null,cargando:false,ocupado:false,localesPendientes:false,ready:false};
  const $=id=>document.getElementById(id);
+ let tipoVista="real";
  const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
  const txt=v=>esc(v||"—");
  const hoy=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
@@ -37,6 +38,7 @@
     +'<h3 id="hc-titulo-form">'+(edit?"Editar ficha del paciente":"Nueva ficha clínica")+'</h3>'
     +'<div class="hc-grid">'
     +input("nombre","Nombre completo",p?.nombre||"","text","required maxlength=180")
+     +(p&&st.editar!==null?'<p class="hc-muted">Tipo fijo: '+esc(p.tipo_registro||"real")+'</p>':'<label class="hc-campo">Tipo de registro<select name="tipo_registro" style="width:100%;padding:10px;background:#101827;color:white"><option value="real">Real</option><option value="ficticio">Ficticio / Prueba</option></select></label>')
     +input("documento","Documento / identificación",p?.documento||"","text","maxlength=40")
     +input("fecha_nacimiento","Fecha de nacimiento",p?.fecha_nacimiento||"","date")
     +input("telefono","Teléfono",p?.telefono||"","tel","maxlength=30")
@@ -64,7 +66,7 @@
       +'<div id="hc-estado" role="status" class="hc-mensaje"></div>'
       +'<div id="hc-form-wrap">'+formPaciente(null)+'</div>'
       +'<div class="hc-filtros"><input id="hc-buscar" type="search" placeholder="Buscar por nombre, documento o teléfono">'
-      +'<label><input id="hc-archivados" type="checkbox"> Mostrar archivados</label></div>'
+      +'<label>Mostrar <select id="hc-tipo" style="background:#101827;color:white"><option value="real">Reales</option><option value="ficticio">Ficticios / Pruebas</option></select></label><label><input id="hc-archivados" type="checkbox"> Mostrar archivados</label></div>'
       +'<div id="hc-lista"></div>';
    const css=document.createElement("style");
    css.textContent="#tab-pacientes .hc-acciones{display:flex;gap:9px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:10px 0}"
@@ -93,13 +95,14 @@
    tab.addEventListener("submit",submit);
    $("hc-buscar").addEventListener("input",dibujar);
    $("hc-archivados").addEventListener("change",dibujar);
+   $("hc-tipo").addEventListener("change",e=>{tipoVista=e.target.value;dibujar();});
    mensaje("Inicia sesión y abre Historia Clínica para consultar los registros.");
  }
  function dibujar(){
    if(!st.ready)return;
    const cont=$("hc-lista"),q=($("hc-buscar")?.value||"").trim().toLowerCase();
    const show=!!$("hc-archivados")?.checked;
-   const lista=st.pacientes.filter(p=>(show||!p.archivado)&&(!q||[p.nombre,p.documento,p.telefono].some(x=>String(x||"").toLowerCase().includes(q))));
+   const lista=st.pacientes.filter(p=>p.tipo_registro===tipoVista&&(show||!p.archivado)&&(!q||[p.nombre,p.documento,p.telefono].some(x=>String(x||"").toLowerCase().includes(q))));
    if(!lista.length){cont.innerHTML='<div class="card"><p class="hc-muted">No hay historias clínicas que coincidan con la búsqueda.</p></div>';return;}
    cont.innerHTML=lista.map(p=>{
      const open=st.abierto===String(p.id),arch=!!p.archivado;
