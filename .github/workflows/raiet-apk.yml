@@ -276,6 +276,12 @@ jobs:
               echo "::error::El archivo de firma recuperado está vacío. Revisa RAIET_DEMO_ANDROID_KEYSTORE_B64."
               exit 1
             fi
+            # La clave única entregada para esta instalación ocupa 3012 bytes.
+            # Comprobar integridad sin imprimir ni revelar su contenido.
+            if [ "$(wc -c < android/raiet-upload.jks | tr -d ' ')" -ne 3012 ]; then
+              echo "::error::RAIET_DEMO_ANDROID_KEYSTORE_B64 está incompleto o no corresponde a la firma original. Vuelve a copiar la línea larga entera."
+              exit 1
+            fi
             if ! keytool -list -keystore android/raiet-upload.jks -storepass "$RAIET_DEMO_ANDROID_STORE_PASSWORD" >/dev/null 2>&1; then
               echo "::error::El archivo JKS no es válido o RAIET_DEMO_ANDROID_STORE_PASSWORD no corresponde a ese archivo."
               exit 1
