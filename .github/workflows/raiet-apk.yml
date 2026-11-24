@@ -303,7 +303,7 @@ jobs:
                       storeFile file('../raiet-upload.jks')
                       storePassword System.getenv('RAIET_DEMO_ANDROID_STORE_PASSWORD')
                       keyAlias System.getenv('RAIET_DEMO_ANDROID_ALIAS')
-                      keyPassword System.getenv('RAIET_DEMO_ANDROID_KEY_PASSWORD')
+                      keyPassword System.getenv('RAIET_DEMO_ANDROID_STORE_PASSWORD')
                   }
               }
               buildTypes {
