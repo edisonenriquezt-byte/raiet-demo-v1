@@ -1,5 +1,5 @@
 
-# Firma permanente: activación inicial tras configurar los cuatro Repository secrets.
+# Firma permanente RAIET DEMO: compilar con los cuatro secretos privados configurados.
 name: Crear APK Android RAIET DEMO PRO
 
 on:
