@@ -268,10 +268,23 @@ jobs:
         run: |
           set -e
           if [ "$RAIET_SIGNED" = "true" ]; then
-            printf "%s" "$RAIET_DEMO_ANDROID_KEYSTORE_B64" | base64 --decode > android/raiet-upload.jks
-            test -s android/raiet-upload.jks
-            keytool -list -keystore android/raiet-upload.jks -storepass "$RAIET_DEMO_ANDROID_STORE_PASSWORD" -alias "$RAIET_DEMO_ANDROID_ALIAS" >/dev/null
-            echo "Keystore y alias DEMO verificados."
+            if ! printf "%s" "$RAIET_DEMO_ANDROID_KEYSTORE_B64" | base64 --decode > android/raiet-upload.jks 2>/dev/null; then
+              echo "::error::La clave RAIET_DEMO_ANDROID_KEYSTORE_B64 no es Base64 válido o está incompleta. Copia toda la línea del archivo privado."
+              exit 1
+            fi
+            if [ ! -s android/raiet-upload.jks ]; then
+              echo "::error::El archivo de firma recuperado está vacío. Revisa RAIET_DEMO_ANDROID_KEYSTORE_B64."
+              exit 1
+            fi
+            if ! keytool -list -keystore android/raiet-upload.jks -storepass "$RAIET_DEMO_ANDROID_STORE_PASSWORD" >/dev/null 2>&1; then
+              echo "::error::El archivo JKS no es válido o RAIET_DEMO_ANDROID_STORE_PASSWORD no corresponde a ese archivo."
+              exit 1
+            fi
+            if ! keytool -list -keystore android/raiet-upload.jks -storepass "$RAIET_DEMO_ANDROID_STORE_PASSWORD" -alias "$RAIET_DEMO_ANDROID_ALIAS" >/dev/null 2>&1; then
+              echo "::error::RAIET_DEMO_ANDROID_ALIAS no coincide con el alias contenido en la firma JKS."
+              exit 1
+            fi
+            echo "Archivo JKS, contraseña del almacén y alias DEMO verificados.";
             python3 - <<'PY'
           from pathlib import Path
           p = Path("android/app/build.gradle")
