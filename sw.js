@@ -1,4 +1,4 @@
-const CACHE_NAME = 'raiet-demo-web-v9-20261123';
+const CACHE_NAME = 'raiet-demo-web-v10-20261123';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

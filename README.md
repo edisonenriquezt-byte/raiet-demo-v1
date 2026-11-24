@@ -33,3 +33,9 @@ Cambiar `VERSION_WEB` en `acceso-esabas.js`, el sufijo `?v=` en `index.html`, y 
 
 ## Pendientes de entrega
 Configurar usuario colaboradora, bot independiente, firma APK estable, origen web distinto y efectuar pruebas de acceso, operaciones y aislamiento entre ESABAS y DEMO. **No entregar a terceros sin estas verificaciones.**
+
+
+## Versiones y firma Android (noviembre de 2026)
+La versión web figura en `acceso-esabas.js` y se presenta en la pantalla de acceso. La APK muestra `APP · v1.0.N` y, cuando corresponde, la etiqueta `PRUEBA`.
+
+El comprobador consulta las publicaciones definitivas del repositorio; una beta nunca se presenta falsamente como actualizable encima de una firma diferente. Las versiones definitivas solo se publican si están presentes los **cuatro secretos de firma** de DEMO. Instrucciones completas: [FIRMA_ANDROID_DEMO.md](FIRMA_ANDROID_DEMO.md).

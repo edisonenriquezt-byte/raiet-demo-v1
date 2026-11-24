@@ -42,22 +42,24 @@ jobs:
             test -s "dist/$archivo"
           done
           grep -q 'lhqyibxpstrterlckaax' dist/index.html
-          grep -q 'VERSION_WEB = "8"' dist/acceso-esabas.js
+          WEB_VERSION="$(grep -oE 'const VERSION_WEB = "[0-9.]+"' dist/acceso-esabas.js | cut -d '"' -f 2)"
+          test -n "$WEB_VERSION"
+          echo "WEB_VERSION=$WEB_VERSION" >> "$GITHUB_ENV"
           grep -q 'RAIET DEMO PRO' dist/index.html
           grep -q 'Crea una copia de seguridad protegida por contraseña' dist/raiet-respaldo.js
           if grep -rq 'fwkdtcecdwxezzkphxiv' dist; then
             echo "Error: una referencia al proyecto privado ESABAS apareció en DEMO." >&2
             exit 1
           fi
-          echo "Paquete DEMO validado: origen Cloudflare independiente, Web v8."
+          echo "Paquete DEMO validado: origen Cloudflare independiente, Web v${WEB_VERSION}."
       - name: Empaquetar para carga directa opcional
         shell: bash
         run: |
-          (cd dist && zip -q -r ../RAIET-DEMO-WEB-v8.zip .)
+          (cd dist && zip -q -r "../RAIET-DEMO-WEB-v${WEB_VERSION}.zip" .)
       - name: Guardar sitio listo para Cloudflare Pages
         uses: actions/upload-artifact@v4
         with:
-          name: RAIET-DEMO-WEB-v8-Cloudflare
-          path: RAIET-DEMO-WEB-v8.zip
+          name: RAIET-DEMO-WEB-${{ env.WEB_VERSION }}-Cloudflare
+          path: RAIET-DEMO-WEB-v*.zip
           if-no-files-found: error
           retention-days: 30

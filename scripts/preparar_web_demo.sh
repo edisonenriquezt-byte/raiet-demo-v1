@@ -13,4 +13,4 @@ cat > dist/_headers <<'EOF'
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: DENY
 EOF
-printf '%s\n' 'RAIET DEMO PRO v5: carpeta dist/ preparada para Cloudflare Pages.'
+printf '%s\n' 'RAIET DEMO PRO: carpeta dist/ preparada para Cloudflare Pages.'

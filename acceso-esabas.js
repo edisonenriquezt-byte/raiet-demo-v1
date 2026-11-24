@@ -17,12 +17,12 @@
   let ultimaActividad = Date.now();
   let bloqueoEnCurso = false;
   const SERVIDOR_HUELLA = "raiet-demo-supabase-lhqyibxpstrterlckaax";
-  const URL_VERSIONES = "https://api.github.com/repos/edisonenriquezt-byte/raiet-demo-v1/releases/latest";
+  const URL_VERSIONES = "https://api.github.com/repos/edisonenriquezt-byte/raiet-demo-v1/releases?per_page=100";
   const ID_FINAL = "com.esabas.raiet.demo";
   let actualizacionConsultada = false;
   let autenticacionEnCurso = false;
   const CLAVE_ACTIVIDAD_WEB = "raiet_demo_web_ultima_actividad";
-  const VERSION_WEB = "1.9";
+  const VERSION_WEB = "1.10";
   function leerActividadWeb() {
     try { return Number(sessionStorage.getItem(CLAVE_ACTIVIDAD_WEB)) || 0; }
     catch (_) { return 0; }
@@ -257,6 +257,7 @@
 
         <p class="mensaje" id="raiet-mensaje" role="status"></p>
         <p id="raiet-activar-web" style="font-size:12px"><a href="./activar.html" style="color:#93c5fd">Activar cuenta o recuperar contraseña</a></p>
+        <p id="raiet-version-acceso" style="text-align:center;font-size:11px;color:#94a3b8;margin-top:14px">WEB · v1.10</p>
       </div>
     `;
 
@@ -273,12 +274,25 @@
     salir.textContent = "Cerrar sesión";
 
     document.body.appendChild(salir);
-    if (!puente()) {
-      const etiquetaVersion=document.createElement("span");
-      etiquetaVersion.id="raiet-version-web";
-      etiquetaVersion.textContent="WEB · v"+VERSION_WEB;
-      etiquetaVersion.title="Versión web de RAIET DEMO PRO";
-      document.body.appendChild(etiquetaVersion);
+    // Mostrar siempre la versión: navegador, pantalla de acceso y APK Android.
+    const etiquetaVersion = document.createElement("span");
+    etiquetaVersion.id = "raiet-version-web";
+    etiquetaVersion.title = "Versión de RAIET DEMO PRO";
+    document.body.appendChild(etiquetaVersion);
+    const versionAcceso = acceso.querySelector("#raiet-version-acceso");
+    function escribirVersion(texto) {
+      etiquetaVersion.textContent = texto;
+      if (versionAcceso) versionAcceso.textContent = texto;
+    }
+    const nativoVersion = puente();
+    if (nativoVersion && nativoVersion.app) {
+      escribirVersion("APP · consultando versión");
+      void nativoVersion.app.getInfo().then(info => {
+        const esDefinitiva = info.id === ID_FINAL;
+        escribirVersion("APP · v" + String(info.version || "?") + (esDefinitiva ? "" : " · PRUEBA"));
+      }).catch(() => escribirVersion("APP · versión no disponible"));
+    } else {
+      escribirVersion("WEB · v" + VERSION_WEB);
     }
 
     const revisarBoton = document.createElement("button");
@@ -366,28 +380,35 @@
       actualizacionConsultada = true;
       try {
         const info = await nativo.app.getInfo();
-        // Nunca confundimos los builds de prueba con la APK oficial.
-        if (info.id !== ID_FINAL) {
-          if (manual) window.alert("Edición de prueba: la actualización automática se habilitará en la APK firmada definitiva.");
+        const esDefinitiva = info.id === ID_FINAL;
+        if (!esDefinitiva && info.id !== "com.esabas.raiet.demo.beta") {
+          if (manual) window.alert("Esta instalación no corresponde a RAIET DEMO PRO.");
           return;
         }
+        // GitHub /releases/latest no incluye versiones preliminares y devuelve 404
+        // cuando todavía no existe una firma definitiva.
         const res = await fetch(URL_VERSIONES, { cache: "no-store" });
-        if (!res.ok) throw new Error("No se pudo comprobar si existen actualizaciones.");
+        if (!res.ok) throw new Error("No se pudo consultar la lista de versiones.");
         const datos = await res.json();
-        const etiqueta = /^raiet-demo-android-(\d+)$/.exec(String(datos.tag_name || ""));
-        const remoto = etiqueta ? Number(etiqueta[1]) : 0;
-        const instalado = Number(info.build);
-        const archivo = Array.isArray(datos.assets)
-          ? datos.assets.find(a => a.name === "RAIET-DEMO.apk")
-          : null;
-        const url = archivo && String(archivo.browser_download_url || "");
-        const autorizada = /^https:\/\/github\.com\/edisonenriquezt-byte\/raiet-demo-v1\/releases\/download\/[^/]+\/RAIET-DEMO\.apk$/.test(url);
-        if (!remoto || !Number.isFinite(instalado) || !autorizada) {
-          if (manual) window.alert("No se encontró una versión instalable válida.");
+        if (!Array.isArray(datos)) throw new Error("Formato de versiones inválido.");
+        const versiones = datos.filter(r => r && !r.draft && !r.prerelease)
+          .map(r => {
+            const etiqueta = /^raiet-demo-android-(\d+)$/.exec(String(r.tag_name || ""));
+            const archivo = Array.isArray(r.assets) ? r.assets.find(a => a.name === "RAIET-DEMO.apk") : null;
+            const url = archivo && String(archivo.browser_download_url || "");
+            const autorizada = /^https:\/\/github\.com\/edisonenriquezt-byte\/raiet-demo-v1\/releases\/download\/raiet-demo-android-\d+\/RAIET-DEMO\.apk$/.test(url);
+            return etiqueta && autorizada ? { numero: Number(etiqueta[1]), url } : null;
+          }).filter(Boolean).sort((a, b) => b.numero - a.numero);
+        const nueva = versiones[0];
+        if (!nueva) {
+          if (manual) window.alert(esDefinitiva
+            ? "Todavía no hay una publicación definitiva disponible."
+            : "Esta es una edición de prueba. La actualización se habilitará al publicar la versión con firma permanente.");
           return;
         }
-        if (remoto <= instalado) {
-          if (manual) window.alert("RAIET DEMO PRO está actualizado (versión v" + String(info.version || "1.9").replace(/^v/i, "") + ").");
+        const instalada = Number(info.build);
+        if (esDefinitiva && (!Number.isFinite(instalada) || nueva.numero <= instalada)) {
+          if (manual) window.alert("RAIET DEMO PRO está actualizado: APP v" + String(info.version || "?") + ".");
           return;
         }
 
@@ -396,12 +417,14 @@
           aviso = document.createElement("div");
           aviso.id = "raiet-aviso-actualizacion";
           const mensaje = document.createElement("span");
-          mensaje.textContent = "Hay una actualización nueva de RAIET DEMO PRO.";
+          mensaje.textContent = esDefinitiva
+            ? "Hay una nueva versión de RAIET DEMO PRO (v1.0." + nueva.numero + ")."
+            : "Ya existe RAIET DEMO PRO definitivo. Se instala como otra aplicación: conserva la edición de prueba hasta comprobar tus datos.";
           const descargar = document.createElement("button");
           descargar.type = "button";
-          descargar.textContent = "Descargar actualización";
+          descargar.textContent = esDefinitiva ? "Descargar actualización" : "Instalar versión definitiva";
           descargar.addEventListener("click", () => {
-            abrirEnNavegador(url).catch(() => window.alert("No se pudo abrir la descarga."));
+            abrirEnNavegador(nueva.url).catch(() => window.alert("No se pudo abrir la descarga."));
           });
           const cerrar = document.createElement("button");
           cerrar.type = "button";
@@ -410,8 +433,9 @@
           aviso.append(mensaje, descargar, cerrar);
           document.body.appendChild(aviso);
         }
-      } catch (_) {
-        if (manual) window.alert("No se pudo consultar las versiones. Revisa tu conexión a internet.");
+      } catch (error) {
+        if (manual) window.alert("No se pudieron consultar las versiones. Revisa tu conexión a internet.");
+        console.warn("Comprobación de actualización DEMO no disponible:", error);
       }
     }
 
