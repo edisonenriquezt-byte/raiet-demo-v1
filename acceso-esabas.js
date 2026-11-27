@@ -11,6 +11,9 @@
   // El acceso se valida en el proyecto DEMO mediante una lista de usuarios.
   const MINUTOS_INACTIVIDAD = 10;
   const TIEMPO_BLOQUEO = MINUTOS_INACTIVIDAD * 60 * 1000;
+  const TIEMPO_SEGUNDO_PLANO = 5 * 60 * 1000;
+  let desdeSegundoPlano = null;
+  let nativoActivo = true;
 
   let temporizador = null;
   let inicioRealizado = false;
@@ -49,6 +52,13 @@
   estilos.textContent = `
     html.raiet-bloqueado body > :not(#raiet-acceso) {
       visibility: hidden !important;
+    }
+
+    html.raiet-en-segundo-plano body > * {
+      visibility: hidden !important;
+    }
+    html.raiet-en-segundo-plano, html.raiet-en-segundo-plano body {
+      background: #080a10 !important;
     }
 
     #raiet-acceso {
@@ -443,23 +453,54 @@
       mensaje.textContent = texto;
     }
 
+    function vencimiento() {
+      return Math.min(ultimaActividad + TIEMPO_BLOQUEO,
+        desdeSegundoPlano === null ? Infinity : desdeSegundoPlano + TIEMPO_SEGUNDO_PLANO);
+    }
+
+    function vencido() {
+      const ahora = Date.now();
+      return ahora < ultimaActividad ||
+        (desdeSegundoPlano !== null && ahora < desdeSegundoPlano) || ahora >= vencimiento();
+    }
+
     function controlarInactividad() {
       clearTimeout(temporizador);
-
+      if (raiz.classList.contains("raiet-bloqueado")) return;
       temporizador = setTimeout(function () {
-        if (Date.now() - ultimaActividad >= TIEMPO_BLOQUEO) {
-          bloquearAplicacion();
-        }
-      }, TIEMPO_BLOQUEO);
+        if (vencido()) void bloquearAplicacion();
+        else controlarInactividad();
+      }, Math.max(0, vencimiento() - Date.now()));
     }
 
     function registrarActividad() {
-      if (raiz.classList.contains("raiet-bloqueado")) {
-        return;
-      }
-
+      if (raiz.classList.contains("raiet-bloqueado") ||
+          (puente() && (!nativoActivo || document.hidden || desdeSegundoPlano !== null))) return;
+      if (vencido()) { void bloquearAplicacion(); return; }
       ultimaActividad = Date.now();
       guardarActividadWeb();
+      controlarInactividad();
+    }
+
+    function sincronizarVisibilidad() {
+      if (!puente()) {
+        if (!document.hidden && !raiz.classList.contains("raiet-bloqueado") && vencido())
+          void bloquearAplicacion();
+        return;
+      }
+      if (document.hidden || !nativoActivo) {
+        raiz.classList.add("raiet-en-segundo-plano");
+        if (!raiz.classList.contains("raiet-bloqueado") && desdeSegundoPlano === null)
+          desdeSegundoPlano = Date.now();
+        controlarInactividad();
+        return;
+      }
+      // Los temporizadores de Android pueden quedar suspendidos: comprobar el reloj
+      // antes de volver a mostrar datos, sin reiniciar el plazo al regresar.
+      if (!raiz.classList.contains("raiet-bloqueado") && vencido())
+        void bloquearAplicacion();
+      desdeSegundoPlano = null;
+      raiz.classList.remove("raiet-en-segundo-plano");
       controlarInactividad();
     }
 
@@ -467,6 +508,9 @@
       if (bloqueoEnCurso) return;
 
       bloqueoEnCurso = true;
+      desdeSegundoPlano = null;
+      actualizacionConsultada = false;
+      document.getElementById("raiet-aviso-actualizacion")?.remove();
 
       raiz.classList.add("raiet-bloqueado");
       clearTimeout(temporizador);
@@ -483,12 +527,15 @@
       }
 
       mostrarMensaje("Identifícate con huella o con tus credenciales para continuar.");
-      await comprobarHuellaGuardada();
-      bloqueoEnCurso = false;
+      try { await comprobarHuellaGuardada(); }
+      finally { bloqueoEnCurso = false; }
     }
 
     function abrirAplicacion() {
+      desdeSegundoPlano = null;
+      ultimaActividad = Date.now();
       raiz.classList.remove("raiet-bloqueado");
+      sincronizarVisibilidad();
 
       mostrarMensaje("");
       document.getElementById("raiet-clave").value = "";
@@ -510,7 +557,7 @@
     }
 
     botonHuella.addEventListener("click", async function () {
-      if (autenticacionEnCurso || !cliente || !lectorHuella()) return;
+      if (bloqueoEnCurso || autenticacionEnCurso || !cliente || !lectorHuella()) return;
       autenticacionEnCurso = true;
       botonHuella.disabled = true;
       mostrarMensaje("Verificando huella...");
@@ -563,7 +610,7 @@
 
       const password = document.getElementById("raiet-clave").value;
 
-      if (autenticacionEnCurso) return;
+      if (bloqueoEnCurso || autenticacionEnCurso) return;
       autenticacionEnCurso = true;
       botonEntrar.disabled = true;
       mostrarMensaje("Verificando acceso...");
@@ -592,16 +639,27 @@
       }
     );
 
-    document.addEventListener("visibilitychange", function () {
-      if (document.hidden && puente() && !raiz.classList.contains("raiet-bloqueado")) {
-        // En Android, bloquea al abandonar la app para proteger expedientes.
-        void bloquearAplicacion();
-      } else if (!document.hidden && !raiz.classList.contains("raiet-bloqueado")) {
-        if (Date.now() - ultimaActividad >= TIEMPO_BLOQUEO) {
-          void bloquearAplicacion();
-        }
-      }
-    });
+    document.addEventListener("visibilitychange", sincronizarVisibilidad);
+    const appNativa = puente()?.app;
+    if (appNativa) {
+      // Los eventos nativos complementan visibilitychange durante cámara,
+      // navegador, cambio de aplicación o bloqueo de pantalla.
+      try {
+        await appNativa.addListener("appStateChange", ({isActive}) => {
+          nativoActivo = !!isActive;
+          sincronizarVisibilidad();
+        });
+        const estado = await appNativa.getState();
+        nativoActivo = !!estado.isActive;
+        sincronizarVisibilidad();
+      } catch (_) { /* visibilitychange permanece como respaldo */ }
+      try {
+        await appNativa.addListener("backButton", ({canGoBack}) => {
+          if (canGoBack) window.history.back();
+          else void appNativa.minimizeApp().catch(() => {});
+        });
+      } catch (_) { /* comportamiento Android predeterminado */ }
+    }
 
     if (!cliente) {
       mostrarMensaje("No se encontró la conexión con Supabase.");
@@ -609,7 +667,7 @@
     }
 
     // La web conserva su sesión al refrescar sólo si hubo actividad reciente.
-    // Android mantiene su acceso biométrico al abrir y su bloqueo al abandonar.
+    // Android exige autenticación al arrancar y bloquea al vencer el plazo.
     const ultimaWeb = !puente() ? leerActividadWeb() : 0;
     const transcurrido = Date.now() - ultimaWeb;
     if (!puente() && ultimaWeb > 0 && transcurrido >= 0 && transcurrido < TIEMPO_BLOQUEO) {

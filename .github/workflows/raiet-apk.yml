@@ -155,6 +155,7 @@ jobs:
           node --check www/mejoras.js
           node --check www/edicion-financiera.js
           node --check www/acceso-esabas.js
+          node scripts/proteger-apk.mjs www
           grep -q 'raiet-native.js' www/index.html
           grep -q 'acceso-esabas.js' www/index.html
           grep -q 'getSecureCredentials' www/acceso-esabas.js
@@ -195,6 +196,51 @@ jobs:
 
           echo "Creando proyecto Android..."
           npx cap add android
+
+          # Ocultar datos en la vista de aplicaciones recientes sin impedir
+          # capturas normales en primer plano (Android 13+).
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import json
+          app_id = json.loads(Path("capacitor.config.json").read_text())["appId"]
+          p = Path("android/app/src/main/java") / Path(*app_id.split(".")) / "MainActivity.java"
+          assert p.is_file(), "MainActivity no encontrada"
+          p.write_text("""package """ + app_id + """;
+
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.view.WindowManager;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  if (Build.VERSION.SDK_INT >= 33) {
+                      setRecentsScreenshotEnabled(false);
+                  }
+              }
+
+              @Override
+              public void onPause() {
+                  if (Build.VERSION.SDK_INT < 33) {
+                      getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+                  }
+                  super.onPause();
+              }
+
+              @Override
+              public void onResume() {
+                  super.onResume();
+                  if (Build.VERSION.SDK_INT < 33) {
+                      getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+                  }
+              }
+          }
+          """)
+          PY
+
 
           echo "Verificando identificador Android..."
           grep -q "appId" capacitor.config.json
