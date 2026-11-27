@@ -1,9 +1,9 @@
-const CACHE_NAME = 'raiet-demo-web-v10-20261123';
+const CACHE_NAME = 'raiet-demo-web-v11-blindaje';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
-  './acceso-esabas.js?v=20261123-demo9',
+  './acceso-esabas.js?v=20261127-demo11',
   './raiet-native.js',
   './icon-192.png',
   './icon-512.png',
@@ -14,7 +14,7 @@ const ASSETS_TO_CACHE = [
   './raiet-gestion.js?v=20261123-demo9',
   './raiet-inventario.js?v=20261123-demo9',
   './raiet-historia-clinica.js?v=20261123-demo9',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2'
 ];
 
 // 1. Instalación: Descarga y guarda en caché la aplicación completa
@@ -33,7 +33,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
-          if (key !== CACHE_NAME) {
+          if (key.startsWith('raiet-demo-web-') && key !== CACHE_NAME) {
             console.log('🧹 [Service Worker] Eliminando caché antigua:', key);
             return caches.delete(key);
           }
@@ -43,37 +43,34 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 3. Estrategia de respuesta: Network First con fallback a Caché
+// 3. Solo recursos estáticos explícitos; nunca respuestas de API ni documentos.
+const recursosPermitidos = new Set(ASSETS_TO_CACHE.map(path =>
+  new URL(path, self.registration.scope).href
+));
 self.addEventListener('fetch', (event) => {
-  const url = event.request.url;
+  const request = event.request;
+  if (request.method !== 'GET' || !recursosPermitidos.has(request.url)) return;
 
-  // Ignorar llamadas directas a la API de Supabase (las maneja la cola outbox de index.html)
-  if (url.includes('.supabase.co/')) {
-    return;
-  }
-
-  // Para navegación y archivos estáticos de la aplicación
-  event.respondWith(
-    fetch(event.request)
-      .then((networkResponse) => {
-        // Si hay internet, actualizamos la copia en caché en segundo plano
-        if (event.request.method === 'GET' && networkResponse.status === 200) {
-          const clone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }
-        return networkResponse;
-      })
-      .catch(() => {
-        // Si NO hay internet (Modo Avión / Sin datos), servimos desde la memoria local
-        return caches.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-          // Si es una petición de navegación (abrir la app), devolvemos index.html
-          if (event.request.mode === 'navigate') {
-            return caches.match('./index.html') || caches.match('./');
-          }
-        });
-      })
-  );
+  event.respondWith((async () => {
+    try {
+      const response = await fetch(request);
+      if (response.ok && !response.redirected &&
+          !/\b(?:private|no-store)\b/i.test(response.headers.get('cache-control') || '')) {
+        try {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(request, response.clone());
+        } catch (_) { /* No impedir la respuesta de red por fallo de caché. */ }
+      }
+      return response;
+    } catch (error) {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(request);
+      if (cached) return cached;
+      if (request.mode === 'navigate') {
+        const fallback = await cache.match(new URL('./index.html', self.registration.scope).href);
+        if (fallback) return fallback;
+      }
+      return Response.error();
+    }
+  })());
 });

@@ -10,7 +10,13 @@ cp raiet-native.js dist/
 cat > dist/_headers <<'EOF'
 /*
   X-Content-Type-Options: nosniff
-  Referrer-Policy: strict-origin-when-cross-origin
+  Referrer-Policy: no-referrer
   X-Frame-Options: DENY
+  Permissions-Policy: camera=(self), microphone=(), geolocation=()
+  X-Robots-Tag: noindex, nofollow
+/index.html
+  Cache-Control: no-cache
+/sw.js
+  Cache-Control: no-cache
 EOF
 printf '%s\n' 'RAIET DEMO PRO: carpeta dist/ preparada para Cloudflare Pages.'

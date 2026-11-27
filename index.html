@@ -119,7 +119,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="RAIET DEMO PRO">
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2"></script>
 
 <!-- CONTROL DE ACCESO PRIVADO ESABAS -->
 <style>
@@ -128,7 +128,7 @@
   }
 </style>
 <script src="./raiet-native.js"></script>
-<script src="./acceso-esabas.js?v=20261123-demo10"></script>
+<script src="./acceso-esabas.js?v=20261127-demo11"></script>
 <!-- FIN CONTROL DE ACCESO -->
 
   <style>
@@ -1072,7 +1072,7 @@
           if (fechaCita <= limite72h && fechaCita >= hoyStr) {
             var hora = new Date(ref).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             var prefijo = (fechaCita === hoyStr) ? '📅 Cita/Alarma hoy (' + hora + '): ' : '📅 Cita/Alarma en 48-72h (' + fechaCita + ' ' + hora + '): ';
-            alertas.push({ texto: prefijo + '<b>' + c.titulo + '</b>', color: '#38bdf8' });
+            alertas.push({ texto: prefijo + '<b>' + String(c.titulo ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])) + '</b>', color: '#38bdf8' });
           }
         }
       });
