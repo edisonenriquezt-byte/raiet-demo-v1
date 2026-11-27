@@ -1,9 +1,9 @@
-const CACHE_NAME = 'raiet-demo-web-v11-blindaje';
+const CACHE_NAME = 'raiet-demo-web-v12-blindaje';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
-  './acceso-esabas.js?v=20261127-demo11',
+  './acceso-esabas.js?v=20261127-demo11b',
   './raiet-native.js',
   './icon-192.png',
   './icon-512.png',
@@ -11,9 +11,9 @@ const ASSETS_TO_CACHE = [
   './edicion-financiera.js?v=20261122-demo2',
   './raiet-interacciones.js?v=20261122-demo2',
   './raiet-respaldo.js?v=20261123-demo8',
-  './raiet-gestion.js?v=20261123-demo9',
-  './raiet-inventario.js?v=20261123-demo9',
-  './raiet-historia-clinica.js?v=20261123-demo9',
+  './raiet-gestion.js?v=20261127-demo11b',
+  './raiet-inventario.js?v=20261127-demo11b',
+  './raiet-historia-clinica.js?v=20261127-demo11b',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2'
 ];
 

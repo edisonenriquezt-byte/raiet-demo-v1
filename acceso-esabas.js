@@ -514,6 +514,7 @@
 
       raiz.classList.add("raiet-bloqueado");
       clearTimeout(temporizador);
+      if(typeof window.raietLimpiarSesionLocal === "function"){try{window.raietLimpiarSesionLocal();}catch(_){console.warn("No se completó la limpieza local.");}}
       borrarActividadWeb();
 
       document.getElementById("raiet-clave").value = "";

@@ -87,7 +87,8 @@ function formulario(item){
  d.scrollIntoView({block:"nearest",behavior:"smooth"});
 }
 async function cargar(){
- if(cargando)return;
+ const generacion=window.raietGeneracionSesion;
+ if(cargando||!window.raietSesionVigente(generacion))return;
  cargando=true;
  try{
   await auth();nota("Cargando Gestión…");
@@ -97,10 +98,11 @@ async function cargar(){
   ]);
   if(res[0].error)throw res[0].error;
   if(res[1].error)throw res[1].error;
+  if(!window.raietSesionVigente(generacion))return;
   lista=res[0].data||[];historial=res[1].data||[];
   dibujar();nota("✓ "+lista.length+" anotaciones sincronizadas.");
- }catch(e){nota("No se pudo consultar Gestión: "+(e?.message||"error"),true);}
- finally{cargando=false;}
+ }catch(e){if(window.raietSesionVigente(generacion))nota("No se pudo consultar Gestión: "+(e?.message||"error"),true);}
+ finally{if(window.raietSesionVigente(generacion))cargando=false;}
 }
 function dibujar(){
  var destino=$("gm-lista");if(!destino)return;
@@ -245,7 +247,7 @@ function iniciar(){
  if(typeof old==="function")window.raietArrancar=function(){old();void cargar();};
  new MutationObserver(function(){
   if(bloqueado()){
-   lista=[];historial=[];editando=null;
+   lista=[];historial=[];editando=null;cargando=false;
    if($("gm-lista"))$("gm-lista").innerHTML="";
    if($("gm-form")){$("gm-form").innerHTML="";$("gm-form").hidden=true;}
   }

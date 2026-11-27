@@ -128,7 +128,7 @@
   }
 </style>
 <script src="./raiet-native.js"></script>
-<script src="./acceso-esabas.js?v=20261127-demo11"></script>
+<script src="./acceso-esabas.js?v=20261127-demo11b"></script>
 <!-- FIN CONTROL DE ACCESO -->
 
   <style>
@@ -748,12 +748,76 @@
     var pacAbiertos = [];
     var subTabPacientes = {};
     
-    var cacheAgenda = JSON.parse(localStorage.getItem('raiet_dev_agenda') || '[]');
-    var cacheCobros = JSON.parse(localStorage.getItem('raiet_dev_cobros') || '[]');
-    var cachePagos = JSON.parse(localStorage.getItem('raiet_dev_pagos') || '[]');
-    var cacheInv = JSON.parse(localStorage.getItem('raiet_dev_inv') || '[]');
+    var cacheAgenda = [];
+    var cacheCobros = [];
+    var cachePagos = [];
+    var cacheInv = [];
     var cachePac = []; // Historias clínicas: solo datos de Supabase, nunca caché local.
-    var cacheCompromisos = JSON.parse(localStorage.getItem('raiet_dev_compromisos') || '[]');
+    var cacheCompromisos = [];
+
+    // Invalidar consultas de una sesión anterior al bloquear o cerrar el acceso.
+    var raietGeneracionSesion = 0;
+    // Las cachés nuevas son volátiles. Las antiguas se eliminan únicamente
+    // si cada registro coincide íntegramente con una lectura autorizada del servidor.
+    var raietCachesPendientes = new Set();
+    function raietCanonico(valor) {
+      if(Array.isArray(valor)) return '['+valor.map(raietCanonico).join(',')+']';
+      if(valor && typeof valor==='object') return '{'+Object.keys(valor).sort().map(k=>JSON.stringify(k)+':'+raietCanonico(valor[k])).join(',')+'}';
+      return JSON.stringify(valor);
+    }
+    function raietAvisarCacheAntigua() {
+      let aviso=document.getElementById('raiet-cache-antigua');
+      if(!raietCachesPendientes.size){if(aviso)aviso.remove();return;}
+      if(!aviso){
+        aviso=document.createElement('div');aviso.id='raiet-cache-antigua';
+        aviso.setAttribute('role','status');
+        aviso.style.cssText='padding:10px 14px;background:#78350f;color:#fff;font-size:13px;';
+        document.body.insertBefore(aviso,document.body.firstChild);
+      }
+      aviso.textContent='Hay copias locales antiguas que no coinciden exactamente con el servidor. Se conservan para revisión, sin incorporarlas a las cuentas ni reenviarlas. Comprueba las operaciones antes de repetirlas.';
+    }
+    function raietConciliarCacheAntigua(clave,filas,generacion) {
+      if(!raietSesionVigente(generacion)||!Array.isArray(filas))return;
+      try {
+        const original=localStorage.getItem(clave);
+        if(original===null){raietCachesPendientes.delete(clave);raietAvisarCacheAntigua();return;}
+        let antiguos;
+        try{antiguos=JSON.parse(original);}catch(_){antiguos=null;}
+        const remotos=new Map(filas.filter(x=>x&&x.id!=null).map(x=>[String(x.id),raietCanonico(x)]));
+        const coinciden=Array.isArray(antiguos)&&antiguos.every(x=>x&&x.id!=null&&!String(x.id).startsWith('loc_')&&remotos.get(String(x.id))===raietCanonico(x));
+        if(coinciden&&localStorage.getItem(clave)===original){localStorage.removeItem(clave);raietCachesPendientes.delete(clave);}
+        else raietCachesPendientes.add(clave);
+      }catch(_){raietCachesPendientes.add(clave);}
+      raietAvisarCacheAntigua();
+    }
+    window.raietConciliarCacheAntigua=raietConciliarCacheAntigua;
+    function raietSesionVigente(generacion) {
+      return generacion === raietGeneracionSesion &&
+        !document.documentElement.classList.contains('raiet-bloqueado');
+    }
+    function raietLimpiarSesionLocal() {
+      raietGeneracionSesion++;
+      raietCachesPendientes.clear();
+      raietAvisarCacheAntigua();
+      cacheAgenda=[]; cacheCobros=[]; cachePagos=[]; cacheInv=[]; cachePac=[]; cacheCompromisos=[];
+      cobrosAbiertos=[]; pagosAbiertos=[]; invAbiertos=[]; pacAbiertos=[]; subTabPacientes={};
+      for (const id of ['lista-agenda','lista-cobros','lista-pagos','lista-inventario','lista-pacientes','lista-alertas','inv-operativo-transacciones','inv-raiet-formulario']) {
+        const elemento=document.getElementById(id);
+        if(elemento) elemento.replaceChildren();
+      }
+      const panel=document.getElementById('panel-alertas');
+      if(panel) panel.style.display='none';
+      const imagen=document.getElementById('img-ampliada');
+      if(imagen) imagen.removeAttribute('src');
+      document.querySelectorAll('.modal.active').forEach(e=>e.classList.remove('active'));
+      const invForm=document.getElementById('inv-raiet-formulario');
+      if(invForm) invForm.hidden=true;
+      for (const limpiar of ['esabasLimpiarDatos','raietLimpiarClinica','raietLimpiarInventario']) {
+        if(typeof window[limpiar]==='function') window[limpiar]();
+      }
+      // No se eliminan copias antiguas: pueden contener movimientos no confirmados.
+    }
+    window.raietLimpiarSesionLocal=raietLimpiarSesionLocal;
 
     function checkConexion() {
       var badge = document.getElementById('conn-badge');
@@ -766,22 +830,15 @@
       } else {
         badge.className = 'system-status status-offline';
         dot.className = 'status-dot dot-offline';
-        txt.innerText = 'OFFLINE LOCAL';
+        txt.innerText = 'SIN CONEXIÓN';
       }
     }
     window.addEventListener('online', checkConexion);
     window.addEventListener('offline', checkConexion);
 
     function guardarMemoriaLocal() {
-      try {
-        localStorage.setItem('raiet_dev_agenda', JSON.stringify(cacheAgenda));
-        localStorage.setItem('raiet_dev_cobros', JSON.stringify(cacheCobros));
-        localStorage.setItem('raiet_dev_pagos', JSON.stringify(cachePagos));
-        localStorage.setItem('raiet_dev_inv', JSON.stringify(cacheInv));
-        localStorage.setItem('raiet_dev_compromisos', JSON.stringify(cacheCompromisos));
-      } catch (e) {
-        console.warn('Memoria local llena:', e);
-      }
+      if(!raietSesionVigente(raietGeneracionSesion))return;
+      // Mantener compatibilidad con las llamadas existentes sin escribir datos en disco.
       actualizarPanelAlertas();
     }
 
@@ -1099,11 +1156,13 @@
 
     // 1. AGENDA
     async function cargarAgenda() {
+      var generacion=raietGeneracionSesion;
+      if(!raietSesionVigente(generacion))return;
       dibujarAgenda();
       if (navigator.onLine && db) {
         try {
           var res = await db.from('agenda').select('*').order('fecha_evento', { ascending: true });
-          if (!res.error && res.data) { cacheAgenda = res.data; guardarMemoriaLocal(); dibujarAgenda(); }
+          if (raietSesionVigente(generacion) && !res.error && res.data) {  cacheAgenda = res.data; raietConciliarCacheAntigua('raiet_dev_agenda',res.data,generacion); guardarMemoriaLocal(); dibujarAgenda(); }
         } catch(e) {}
       }
     }
@@ -1300,13 +1359,16 @@
     window.raietArchivar=raietArchivar;
 
     async function cargarCobros() {
+      var generacion=raietGeneracionSesion;
+      if(!raietSesionVigente(generacion))return;
       dibujarCobros();
       if (navigator.onLine && db) {
         try {
           var res = await db.from('clientes').select('*, cobros_cargos(*), cobros_abonos(*)').order('creado_el', { ascending: false });
-          if (!res.error && res.data) { cacheCobros = res.data; }
+          if (raietSesionVigente(generacion) && !res.error && res.data) {  cacheCobros = res.data; raietConciliarCacheAntigua('raiet_dev_cobros',res.data,generacion); }
           var resCp = await db.from('compromisos_pago').select('*');
-          if (!resCp.error && resCp.data) { cacheCompromisos = resCp.data; }
+          if(!raietSesionVigente(generacion)) return;
+          if (!resCp.error && resCp.data) { cacheCompromisos = resCp.data; raietConciliarCacheAntigua('raiet_dev_compromisos',resCp.data,generacion); }
           guardarMemoriaLocal();
           dibujarCobros();
         } catch(e) {}
@@ -2010,11 +2072,13 @@
 
     // 3. PAGOS (PROVEEDORES)
     async function cargarPagos() {
+      var generacion=raietGeneracionSesion;
+      if(!raietSesionVigente(generacion))return;
       dibujarPagos();
       if (navigator.onLine && db) {
         try {
           var res = await db.from('acreedores').select('*, pagos_cargos(*), pagos_abonos(*)').order('creado_el', { ascending: false });
-          if (!res.error && res.data) { cachePagos = res.data; guardarMemoriaLocal(); dibujarPagos(); }
+          if (raietSesionVigente(generacion) && !res.error && res.data) {  cachePagos = res.data; raietConciliarCacheAntigua('raiet_dev_pagos',res.data,generacion); guardarMemoriaLocal(); dibujarPagos(); }
         } catch(e) {}
       }
     }
@@ -2568,11 +2632,13 @@
     }
 
     async function cargarInventario() {
+      var generacion=raietGeneracionSesion;
+      if(!raietSesionVigente(generacion))return;
       dibujarInventario();
       if (navigator.onLine && db) {
         try {
           var res = await db.from('inventario_productos').select('*, inventario_movimientos(*)').order('creado_el', { ascending: false });
-          if (!res.error && res.data) { cacheInv = res.data; guardarMemoriaLocal(); dibujarInventario(); }
+          if (raietSesionVigente(generacion) && !res.error && res.data) {  cacheInv = res.data; raietConciliarCacheAntigua('raiet_dev_inv',res.data,generacion); guardarMemoriaLocal(); dibujarInventario(); }
         } catch(e) {}
       }
     }
@@ -2665,11 +2731,13 @@
 
     // 5. PACIENTES
     async function cargarPacientes() {
+      var generacion=raietGeneracionSesion;
+      if(!raietSesionVigente(generacion))return;
       dibujarPacientes();
       if (navigator.onLine && db) {
         try {
           var res = await db.from('pacientes').select('*').order('creado_el', { ascending: false });
-          if (!res.error && res.data) { cachePac = res.data; guardarMemoriaLocal(); dibujarPacientes(); }
+          if (raietSesionVigente(generacion) && !res.error && res.data) { cachePac = res.data; guardarMemoriaLocal(); dibujarPacientes(); }
         } catch(e) {}
       }
     }
@@ -2732,6 +2800,9 @@
     }
 
     function cargarTodo() {
+      if(!raietSesionVigente(raietGeneracionSesion))return;
+      for(const clave of ['raiet_dev_agenda','raiet_dev_cobros','raiet_dev_pagos','raiet_dev_inv','raiet_dev_compromisos','raiet_demo_pac']){try{if(localStorage.getItem(clave)!==null)raietCachesPendientes.add(clave);}catch(_){}}
+      raietAvisarCacheAntigua();
       checkConexion();
       cargarAgenda();
       cargarCobros();
@@ -2834,6 +2905,7 @@
   }
   async function cargar() {
     if (state.cargando || document.documentElement.classList.contains('raiet-bloqueado')) return;
+    const generacion=window.raietGeneracionSesion;
     state.cargando=true;setMessage('Consultando clientes, asuntos y movimientos…');
     try {
       validarActivo();
@@ -2843,6 +2915,7 @@
         consulta('clientes'), consulta('asuntos'), consulta('actuaciones'),consulta('actuaciones_adjuntos'),
         consulta('cobros_cargos'),consulta('cobros_abonos'),consulta('agenda'),consulta('compromisos_pago')
       ]);
+      if(!window.raietSesionVigente(generacion))return;
       Object.assign(state,{clientes,asuntos,actuaciones,adjuntos,cargos,abonos,agenda,cuotas,listo:true});
       // Un cliente seleccionado puede haber sido eliminado desde otra sesión.
       if(!clientes.some(c=>idIgual(c.id,state.clienteId))) state.clienteId=null;
@@ -2850,8 +2923,8 @@
       setMessage(`${clientes.length} clientes · ${asuntos.length} asuntos · ${actuaciones.length} actuaciones`,'ok');
       actualizarClientesCobro();dibujarLista();dibujarFicha();
       if(typeof window.actualizarPanelAlertas === 'function') window.actualizarPanelAlertas();
-    } catch(e) { console.error(e);setMessage(e.message,'error'); }
-    finally {state.cargando=false;}
+    } catch(e) { if(window.raietSesionVigente(generacion)){console.error(e);setMessage(e.message,'error');} }
+    finally {if(window.raietSesionVigente(generacion))state.cargando=false;}
   }
   // Mismo cliente para cualquier obligación. La venta inicial permite
   // reutilizar la ficha en vez de crear registros duplicados.
@@ -3289,7 +3362,9 @@
   }
   function limpiar() {
     for(const k of ['clientes','asuntos','actuaciones','adjuntos','cargos','abonos','agenda','cuotas'])state[k]=[];
-    state.clienteId=null;state.asuntoId=null;state.listo=false;
+    state.clienteId=null;state.asuntoId=null;state.listo=false;state.cargando=false;
+    if(el('esabas-form-cliente')){el('esabas-form-cliente').replaceChildren();el('esabas-form-cliente').hidden=true;}
+    actualizarClientesCobro();
     if(el('esabas-lista-clientes')){el('esabas-lista-clientes').hidden=false;el('esabas-lista-clientes').innerHTML='';}
     if(el('esabas-buscar'))el('esabas-buscar').hidden=false;
     if(el('esabas-ficha-cliente'))el('esabas-ficha-cliente').innerHTML='';
@@ -3322,8 +3397,8 @@
 <script src="./edicion-financiera.js?v=20261122-demo2"></script>
 <script src="./raiet-interacciones.js?v=20261122-demo2"></script>
 <script src="./raiet-respaldo.js?v=20261123-demo8"></script>
-<script src="./raiet-gestion.js?v=20261123-demo9"></script>
-<script src="./raiet-inventario.js?v=20261123-demo9"></script>
-<script src="./raiet-historia-clinica.js?v=20261123-demo9"></script>
+<script src="./raiet-gestion.js?v=20261127-demo11b"></script>
+<script src="./raiet-inventario.js?v=20261127-demo11b"></script>
+<script src="./raiet-historia-clinica.js?v=20261127-demo11b"></script>
 </body>
 </html>

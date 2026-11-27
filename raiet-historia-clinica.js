@@ -185,18 +185,23 @@
  }
  async function cargarPacientes(){
    iniciar();if(st.ocupado)return;
+   const generacion=window.raietGeneracionSesion;
+   if(!window.raietSesionVigente(generacion))return;
    mensaje("Consultando historias clínicas...");
    try{
     await autorizado();
     const res=await db().from("pacientes").select("*").order("creado_el",{ascending:false});
     if(res.error)throw res.error;
+    if(!window.raietSesionVigente(generacion))return;
     st.pacientes=res.data||[];
-    if(!st.localesPendientes){try{localStorage.removeItem("raiet_demo_pac");}catch(_){}}
+    window.raietConciliarCacheAntigua("raiet_demo_pac",st.pacientes,generacion);
     dibujar();mensaje(st.pacientes.length+" fichas disponibles. Registros médicos protegidos por usuario.");
     if(st.abierto&&st.pacientes.some(x=>String(x.id)===st.abierto))await cargarDetalle(st.abierto);
-   }catch(e){st.pacientes=[];dibujar();mensaje(e.message||"No se pudieron consultar las fichas.",true);}
+   }catch(e){if(window.raietSesionVigente(generacion)){st.pacientes=[];dibujar();mensaje(e.message||"No se pudieron consultar las fichas.",true);}}
  }
  async function cargarDetalle(id){
+   const generacion=window.raietGeneracionSesion;
+   if(!window.raietSesionVigente(generacion))return;
    st.cargando=true;dibujar();
    const entradas=Object.entries(tablas);
    try{
@@ -207,11 +212,11 @@
        const res=await q;if(res.error)throw Error(nombres[k]+": "+res.error.message);
        return [k,res.data||[]];
      }));
-     if(st.abierto!==id)return;
+     if(!window.raietSesionVigente(generacion)||st.abierto!==id)return;
      st.registros=Object.fromEntries(datos);
      mensaje("Historia clínica consultada correctamente.");
-   }catch(e){mensaje("No se pudo leer el historial: "+(e.message||"error"),true);}
-   finally{st.cargando=false;dibujar();}
+   }catch(e){if(window.raietSesionVigente(generacion))mensaje("No se pudo leer el historial: "+(e.message||"error"),true);}
+   finally{if(window.raietSesionVigente(generacion)){st.cargando=false;dibujar();}}
  }
  async function guardarFicha(form){
    await autorizado();
@@ -378,6 +383,13 @@
    }catch(e){mensaje("No se guardó: "+(e.message||"error"),true);}
    finally{st.ocupado=false;if(b)b.disabled=false;}
  }
+ window.raietLimpiarClinica=function(){
+   st.pacientes=[];st.paciente=null;st.registros={};st.abierto=null;st.editar=null;st.cargando=false;st.tab="evoluciones";
+   if($("hc-lista"))$("hc-lista").replaceChildren();
+   if($("hc-form-wrap"))$("hc-form-wrap").innerHTML=formPaciente(null);
+   if($("hc-buscar"))$("hc-buscar").value="";
+   mensaje("");
+ };
  window.cargarPacientes=cargarPacientes;
  window.renderPacientes=dibujar;
  window.dibujarPacientes=dibujar;

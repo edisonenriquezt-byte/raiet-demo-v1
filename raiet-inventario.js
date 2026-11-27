@@ -224,19 +224,26 @@ window.dibujarInventario=function(){
  actualizarOpcionesInventario();
  if(vistaInventario==="transacciones")renderTransaccionesInventario();
 };
+window.raietLimpiarInventario=function(){
+ detallesMovimientos.clear();panelCerrar();actualizarOpcionesInventario();mensaje("");
+ const cont=$("inv-operativo-transacciones");if(cont)cont.replaceChildren();
+};
 window.renderInventario=window.dibujarInventario;
 window.cargarInventario=async function(){
  montaje();
- if(!navigator.onLine){mensaje("Sin conexión: solo lectura de datos del dispositivo; no se pueden registrar movimientos.",true);window.dibujarInventario();return;}
- if(!window.db||document.documentElement.classList.contains("raiet-bloqueado"))return;
+ if(!navigator.onLine){mensaje("Sin conexión: solo lectura de los datos de esta sesión; no se pueden registrar movimientos.",true);window.dibujarInventario();return;}
+ const generacion=window.raietGeneracionSesion;
+ if(!window.db||!window.raietSesionVigente(generacion))return;
  try{
   const r=await window.db.from("inventario_productos").select("*, inventario_movimientos(*)").order("creado_el",{ascending:false});
   if(r.error)throw r.error;
+  if(!window.raietSesionVigente(generacion))return;
   window.cacheInv=r.data||[];
+  window.raietConciliarCacheAntigua('raiet_dev_inv',window.cacheInv,generacion);
   if(typeof window.guardarMemoriaLocal==="function")window.guardarMemoriaLocal();
   window.dibujarInventario();
   mensaje("✓ Datos de Inventario sincronizados.");
- }catch(e){mensaje("No se pudo sincronizar Inventario: "+(e?.message||"error"),true);}
+ }catch(e){if(window.raietSesionVigente(generacion))mensaje("No se pudo sincronizar Inventario: "+(e?.message||"error"),true);}
 };
 window.guardarProductoInventario=async function(){
  if(ocupada)return;
