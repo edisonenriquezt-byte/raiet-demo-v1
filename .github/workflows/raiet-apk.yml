@@ -4,6 +4,11 @@ name: Crear APK Android RAIET DEMO PRO
 
 on:
   workflow_dispatch:
+    inputs:
+      transition_release:
+        description: Publicar también la APK puente en GitHub Releases
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -26,9 +31,15 @@ on:
       - "tools/generar_iconos_demo.py"
       - "icon-192.png"
       - "icon-512.png"
+      - "scripts/proteger-apk.mjs"
+      - "scripts/publicar-apk-privada.py"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: raiet-demo-android-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   compilar-apk:
@@ -36,6 +47,8 @@ jobs:
     if: ${{ !contains(github.event.head_commit.message, '[web-only]') }}
     name: Compilar APK RAIET DEMO PRO con huella y actualizaciones
     runs-on: ubuntu-24.04
+    outputs:
+      signed: ${{ steps.manifest.outputs.signed }}
 
     steps:
       - name: Obtener codigo RAIET
@@ -179,6 +192,10 @@ jobs:
             echo "RAIET_SIGNED=true" >> "$GITHUB_ENV"
             APK_ID="com.esabas.raiet.demo"
           else
+            if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+              echo "::error::La versión oficial requiere la firma original DEMO."
+              exit 1
+            fi
             echo "RAIET_SIGNED=false" >> "$GITHUB_ENV"
             APK_ID="com.esabas.raiet.demo.beta"
           fi
@@ -404,6 +421,7 @@ jobs:
           sha256sum RAIET-DEMO.apk
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs RAIET-DEMO.apk
           if [ "$RAIET_SIGNED" = "true" ]; then
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs RAIET-DEMO.apk | grep -Fx "Signer #1 certificate SHA-256 digest: fdb321b362e1e6782eb504a4741ba13e91357a7b8e5534fd6156b3c465814648"
             "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging RAIET-DEMO.apk | grep -q "name='com.esabas.raiet.demo'"
           else
             "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging RAIET-DEMO.apk | grep -q "name='com.esabas.raiet.demo.beta'"
@@ -440,28 +458,72 @@ jobs:
           print(f"CONFIRMADO: logo original RAIET incorporado al APK firmado ({found}).")
           PY
 
-      - name: Publicar APK para instalar
+      - name: Generar manifiesto oficial
+        id: manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "signed=$RAIET_SIGNED" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import os, hashlib, json
+          from pathlib import Path
+          v = int(os.environ["GITHUB_RUN_NUMBER"])
+          assert v > 24, "La versión debe superar la última APK oficial"
+          app = "com.esabas.raiet.demo" if os.environ["RAIET_SIGNED"] == "true" else "com.esabas.raiet.demo.beta"
+          Path("latest.json").write_text(json.dumps({
+              "applicationId": app, "versionCode": v, "versionName": f"1.0.{v}",
+              "apk": f"versions/{v}/RAIET-DEMO.apk",
+              "sha256": hashlib.sha256(Path("RAIET-DEMO.apk").read_bytes()).hexdigest()
+          }))
+          PY
+
+      - name: Guardar APK y manifiesto
         uses: actions/upload-artifact@v4
         with:
           name: RAIET-DEMO-Android-APK
-          path: RAIET-DEMO.apk
+          path: |
+            RAIET-DEMO.apk
+            latest.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
+  publicar-privada:
+    needs: compilar-apk
+    if: github.ref == 'refs/heads/main' && needs.compilar-apk.outputs.signed == 'true' && vars.RAIET_PRIVATE_UPDATES == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: RAIET-DEMO-Android-APK
+      - name: Publicar y verificar APK privada DEMO
+        env:
+          RAIET_STORAGE_URL: ${{ vars.RAIET_STORAGE_URL }}
+          RAIET_PUBLISHER_UID: ${{ vars.RAIET_PUBLISHER_UID }}
+          RAIET_STORAGE_PUBLIC_KEY: ${{ secrets.RAIET_STORAGE_PUBLIC_KEY }}
+          RAIET_PUBLISHER_EMAIL: ${{ secrets.RAIET_PUBLISHER_EMAIL }}
+          RAIET_PUBLISHER_PASSWORD: ${{ secrets.RAIET_PUBLISHER_PASSWORD }}
+        run: python3 scripts/publicar-apk-privada.py
 
-      - name: Publicar APK definitiva en GitHub Releases
-        if: github.ref == 'refs/heads/main' && env.RAIET_SIGNED == 'true'
-        shell: bash
+  publicar-puente:
+    needs: [compilar-apk, publicar-privada]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.transition_release == true && needs.publicar-privada.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: RAIET-DEMO-Android-APK
+      - name: Publicar APK puente firmada
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           TAG: raiet-demo-android-${{ github.run_number }}
         run: |
-          set -e
-          gh release create "$TAG" RAIET-DEMO.apk \
-            --repo "$REPO" \
-            --target "$GITHUB_SHA" \
-            --title "RAIET DEMO PRO · Versión Android definitiva" \
-            --notes "RAIET DEMO PRO firmada de forma permanente, con consulta de nuevas versiones y aviso de actualización. Paquete: com.esabas.raiet.demo. Mantén a salvo el archivo JKS y las contraseñas originales." \
-            --latest
-          echo "DESCARGA_DIRECTA: https://github.com/$REPO/releases/latest/download/RAIET-DEMO.apk"
+          set -euo pipefail
+          gh release create "$TAG" RAIET-DEMO.apk --repo "$REPO" --target "$GITHUB_SHA" --title "RAIET DEMO PRO · Actualización de transición" --notes "Actualización firmada al canal privado DEMO PRO." --latest
